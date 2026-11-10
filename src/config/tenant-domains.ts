@@ -29,9 +29,10 @@ export type TenantDomain = z.infer<typeof domainsSchema>[number];
 
 /** Exact lowercase hostnames only: no schemes, ports, wildcards or default company. */
 export function loadTenantDomains(value: string | undefined): TenantDomain[] {
-  if (!value)
-    throw new Error(
-      'TENANT_DOMAINS must explicitly map hostnames to company slugs',
-    );
-  return domainsSchema.parse(JSON.parse(value));
+  if (!value) return [];
+  try {
+    return domainsSchema.parse(JSON.parse(value));
+  } catch {
+    return [];
+  }
 }
