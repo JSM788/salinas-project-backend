@@ -67,6 +67,12 @@ const businessStatus: Record<ErrorCode, number> = {
   digital_disconnection_active: 409,
   outside_geofence: 409,
   storage_upload_failed: 502,
+  rate_limited: 429,
+  integration_unauthorized: 401,
+  integration_signature_invalid: 401,
+  order_not_found: 404,
+  orders_forbidden: 403,
+  customer_visit_today_conflict: 409,
 };
 
 function postgresCode(error: unknown): string | undefined {

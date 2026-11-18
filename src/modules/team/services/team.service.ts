@@ -7,13 +7,14 @@ import { pageResult } from '../../../common/pagination';
 import type { PaginationQuery } from '../../../common/pagination';
 import { memberUserSelection, memberInvitationSelection, memberInvitationResponse } from '../../platform/services/member-response';
 import { MemberListQuery } from '../../platform/dto/platform.dto';
-import { teamMemberResponseSchema, TeamProfileInput } from '../dto/team.dto';
+import { teamMemberResponseSchema, TeamProfileInput, CompanySettingsInput, companySettingsResponseSchema } from '../dto/team.dto';
 import { memberResponse } from '../../platform/services/member-response';
 import { recordAccessEvent } from '../../identity/services/access-events';
 import { revokeAccessLinks } from '../../identity/services/revoke-access-links';
 import { Prisma } from '../../../generated/prisma/client';
 import { InvitationsService } from '../../invitations/invitations.service';
 import { MailService } from '../../mail/mail.service';
+import { storage } from '../../../common/storage.service';
 
 @Injectable()
 export class TeamService {
@@ -117,6 +118,113 @@ export class TeamService {
       const protectedMember = await tx.membership.findFirst({ where: { companyId: principal.companyId, id: membershipId, user: { isPlatformOwner: true } }, select: { id: true } });
       if (protectedMember) reject('team_forbidden');
       return this.invitations.history(tx, principal.companyId, membershipId, query);
+    });
+  }
+
+  private extractExtendedSettings(details: unknown) {
+    if (!details || typeof details !== 'object' || Array.isArray(details)) return {};
+    const d = details as Record<string, unknown>;
+    return {
+      legalName: typeof d.legalName === 'string' ? d.legalName : null,
+      taxId: typeof d.taxId === 'string' ? d.taxId : null,
+      logoUrl: typeof d.logoUrl === 'string' ? d.logoUrl : null,
+      digitalDisconnectionHour: typeof d.digitalDisconnectionHour === 'string' ? d.digitalDisconnectionHour : '19:00',
+      autoCloseRemainingVisits: typeof d.autoCloseRemainingVisits === 'boolean' ? d.autoCloseRemainingVisits : true,
+      antiMockGpsRequired: typeof d.antiMockGpsRequired === 'boolean' ? d.antiMockGpsRequired : true,
+    };
+  }
+
+  getCompanySettings(principal: Principal) {
+    return this.prisma.readTransaction(async (tx) => {
+      await this.requireManager(tx, principal);
+      const company = await tx.company.findUnique({
+        where: { id: principal.companyId },
+        select: { id: true, name: true, timeZone: true },
+      });
+      if (!company) reject('platform_company_not_found');
+
+      const latestAudit = await tx.auditEntry.findFirst({
+        where: { companyId: principal.companyId, action: 'company_settings_updated' },
+        orderBy: { id: 'desc' },
+        select: { details: true },
+      });
+      const extra = this.extractExtendedSettings(latestAudit?.details);
+
+      return companySettingsResponseSchema.parse({
+        companyId: company.id,
+        name: company.name,
+        timeZone: company.timeZone,
+        legalName: extra.legalName ?? null,
+        taxId: extra.taxId ?? null,
+        logoUrl: extra.logoUrl ?? null,
+        digitalDisconnectionHour: extra.digitalDisconnectionHour ?? '19:00',
+        autoCloseRemainingVisits: extra.autoCloseRemainingVisits ?? true,
+        antiMockGpsRequired: extra.antiMockGpsRequired ?? true,
+      });
+    });
+  }
+
+  async updateCompanySettings(principal: Principal, key: string, input: CompanySettingsInput) {
+    const companyId = principal.companyId;
+    let finalLogoUrl = input.logoUrl;
+    if (input.logoBase64 && input.logoMimeType) {
+      const uploaded = await storage.uploadBase64(input.logoBase64, input.logoMimeType, 'logos');
+      if (uploaded) finalLogoUrl = uploaded;
+    }
+
+    const fingerprint = createHash('sha256').update(JSON.stringify(['team_company_settings', companyId, { ...input, logoBase64: undefined, logoUrl: finalLogoUrl }])).digest('hex');
+    return this.prisma.transaction(async (tx) => {
+      await this.requireManager(tx, principal);
+      const identity = { companyId, membershipId: principal.membershipId, key };
+      const existing = await tx.operation.findUnique({ where: { companyId_membershipId_key: identity } });
+      if (existing) {
+        if (existing.fingerprint !== fingerprint) reject('idempotency_key_reused');
+        return companySettingsResponseSchema.parse(existing.response);
+      }
+
+      const latestAudit = await tx.auditEntry.findFirst({
+        where: { companyId, action: 'company_settings_updated' },
+        orderBy: { id: 'desc' },
+        select: { details: true },
+      });
+      const current = this.extractExtendedSettings(latestAudit?.details);
+
+      const updated = await tx.company.update({
+        where: { id: companyId },
+        data: {
+          timeZone: input.timeZone,
+          ...(input.name ? { name: input.name } : {}),
+        },
+        select: { id: true, name: true, timeZone: true },
+      });
+
+      const extended = {
+        legalName: input.legalName !== undefined ? input.legalName : current.legalName,
+        taxId: input.taxId !== undefined ? input.taxId : current.taxId,
+        logoUrl: finalLogoUrl !== undefined ? finalLogoUrl : current.logoUrl,
+        digitalDisconnectionHour: input.digitalDisconnectionHour !== undefined ? input.digitalDisconnectionHour : current.digitalDisconnectionHour,
+        autoCloseRemainingVisits: input.autoCloseRemainingVisits !== undefined ? input.autoCloseRemainingVisits : current.autoCloseRemainingVisits,
+        antiMockGpsRequired: input.antiMockGpsRequired !== undefined ? input.antiMockGpsRequired : current.antiMockGpsRequired,
+      };
+
+      const response = companySettingsResponseSchema.parse({
+        companyId: updated.id,
+        name: updated.name,
+        timeZone: updated.timeZone,
+        ...extended,
+      });
+
+      await tx.operation.create({ data: { ...identity, fingerprint, response } });
+      await tx.auditEntry.create({
+        data: {
+          companyId,
+          membershipId: principal.membershipId,
+          action: 'company_settings_updated',
+          subjectId: companyId,
+          details: extended,
+        },
+      });
+      return response;
     });
   }
 }

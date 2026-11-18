@@ -254,7 +254,10 @@ test("owner edits member details without replacing identity, credentials or hist
     const resetResponse = await post(passwordInput, path, token, resetKey);
     assert.equal(resetResponse.status, 200);
     const resetMember = await resetResponse.json();
-    assert.ok(!JSON.stringify(resetMember).includes("password"));
+    assert.ok(
+      !JSON.stringify(resetMember).includes('"password"') &&
+        !JSON.stringify(resetMember).includes('"passwordHash"'),
+    );
     const resetUser = await db.prisma.user.findUniqueOrThrow({
       where: { id: worker.userId },
     });
@@ -525,7 +528,7 @@ test("only the global owner creates companies and role-bound users with preserve
       const member = (await response.json()) as (typeof createdMembers)[number];
       createdMembers.push(member);
       assert.equal(member.role, role);
-      assert.ok(!JSON.stringify(member).includes("password"));
+      assert.ok(!JSON.stringify(member).includes('"password"') && !JSON.stringify(member).includes('"passwordHash"'));
       assert.deepEqual(await (await post(members, input, key)).json(), member);
       assert.equal(
         (await post(members, { ...input, password: "different-password" }, key))

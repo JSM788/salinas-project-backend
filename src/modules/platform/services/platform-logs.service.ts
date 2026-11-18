@@ -1,4 +1,5 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
+import { reject } from '../../../common/errors/application-error';
 import {
   listSourceLogFiles,
   LogLevel,
@@ -374,7 +375,7 @@ export class PlatformLogsService {
     await this.prisma.readTransaction((tx) => this.access.requireOwner(tx, principal));
     const file = readSourceLogFile(source, filename);
     if (!file) {
-      throw new NotFoundException('Archivo de log no encontrado.');
+      reject('platform_company_not_found');
     }
     return file;
   }

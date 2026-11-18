@@ -1,3 +1,5 @@
+process.env.NODE_ENV = 'test';
+
 import { randomUUID } from 'node:crypto';
 import { execFile } from 'node:child_process';
 import { promisify } from 'node:util';

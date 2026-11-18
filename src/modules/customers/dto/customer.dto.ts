@@ -7,6 +7,7 @@ export const customerFiltersSchema = paginationQuerySchema.extend({
   membershipId: z.uuid().optional(),
   role: z.enum(['commercial', 'merchandiser']).optional(),
   assignment: z.enum(['assigned', 'unassigned']).optional(),
+  scope: z.enum(['assigned', 'company']).optional(),
 }).strict();
 export type CustomerFilters = z.infer<typeof customerFiltersSchema>;
 
@@ -62,6 +63,15 @@ export const customerResponseSchema = z.object({
   address: z.string(),
   latitude: z.number().nullable().optional(),
   longitude: z.number().nullable().optional(),
+  conflictVisit: z
+    .object({
+      status: z.string(),
+      scheduledAt: z.string(),
+      memberName: z.string(),
+      isToday: z.boolean(),
+    })
+    .nullable()
+    .optional(),
 });
 export const assigneeResponseSchema = z.object({
   displayName: z.string().nullable().optional(),

@@ -84,5 +84,37 @@ test('manager edits only own-company profiles and preserves identity, role and a
     await operator.addMember(other.companyId, 'updated@example.com', 'profile-test-password', 'commercial');
     assert.notEqual((await post({ ...input, displayName: 'Cross-company change' })).status, 200);
     assert.equal((await db.prisma.user.findUniqueOrThrow({ where: { id: worker.userId } })).displayName, input.displayName);
+
+    // Test: manager reads company settings
+    const getSettings = await fetch(`${url}/v1/team/company/settings`, {
+      headers: { Authorization: `Bearer ${token}`, 'X-Tenant-Host': 'profile.example' },
+    });
+    assert.equal(getSettings.status, 200);
+    const initialSettings = await getSettings.json() as { companyId: string; name: string; timeZone: string };
+    assert.equal(initialSettings.companyId, manager.companyId);
+
+    // Test: worker cannot update company settings
+    const workerUpdate = await fetch(`${url}/v1/team/company/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${workerToken}`, 'X-Tenant-Host': 'profile.example', 'Idempotency-Key': randomUUID() },
+      body: JSON.stringify({ timeZone: 'America/Santiago' }),
+    });
+    assert.notEqual(workerUpdate.status, 200);
+
+    // Test: manager updates company settings
+    const managerUpdate = await fetch(`${url}/v1/team/company/settings`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}`, 'X-Tenant-Host': 'profile.example', 'Idempotency-Key': randomUUID() },
+      body: JSON.stringify({ timeZone: 'America/Santiago', name: 'Profile Chile' }),
+    });
+    assert.equal(managerUpdate.status, 200);
+    const updatedSettings = await managerUpdate.json() as { companyId: string; name: string; timeZone: string };
+    assert.equal(updatedSettings.timeZone, 'America/Santiago');
+    assert.equal(updatedSettings.name, 'Profile Chile');
+
+    // Verify persisted in database
+    const companyInDb = await db.prisma.company.findUniqueOrThrow({ where: { id: manager.companyId } });
+    assert.equal(companyInDb.timeZone, 'America/Santiago');
+    assert.equal(companyInDb.name, 'Profile Chile');
   } finally { await app?.close(); await db.close(); }
 });

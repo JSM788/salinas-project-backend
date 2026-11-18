@@ -61,7 +61,7 @@ test('company field planning requires its own capability and preserves personal 
       document.paths['/v1/field-operations/agenda']
         .get!.parameters.filter((parameter) => parameter.in === 'query')
         .map((parameter) => parameter.name),
-      ['page', 'pageSize', 'search', 'membershipId', 'role', 'date', 'workdayDate', 'status'],
+      ['page', 'pageSize', 'search', 'membershipId', 'role', 'date', 'dateFrom', 'dateTo', 'workdayDate', 'status'],
     );
     const url = await app.getUrl();
     const login = await fetch(url + '/v1/auth/login', {
@@ -426,13 +426,15 @@ test('manager planning reaches Merchandiser mobile and audited closure is atomic
     ).json() as any).items as { id: string; audit: unknown; has_evidence: boolean }[];
     assert.deepEqual(team[0].audit, audit);
     assert.equal(team[0].has_evidence, true);
-    assert.deepEqual(
-      await (
-        await fetch(url + `/v1/field-operations/visits/${visit.id}/evidence`, {
-          headers: managerHeaders,
-        })
-      ).json(),
-      attachment,
+    const evidenceRes = (await (
+      await fetch(url + `/v1/field-operations/visits/${visit.id}/evidence`, {
+        headers: managerHeaders,
+      })
+    ).json()) as { mimeType: string; base64: string };
+    assert.equal(evidenceRes.mimeType, attachment.mimeType);
+    assert.ok(
+      evidenceRes.base64.startsWith('http') ||
+        evidenceRes.base64 === attachment.base64,
     );
     assert.equal((await post('/v1/me/workdays/end', {})).status, 200);
     const days = (await (

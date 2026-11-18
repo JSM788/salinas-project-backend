@@ -118,7 +118,7 @@ test('HTTP invitations are tenant-bound, single-use, expiring, resendable and du
     await waitFor(async () => (await db.prisma.mailOutbox.findUniqueOrThrow({ where: { invitationId: renewed.id } })).status === 'sent');
     assert.equal(messages.length, 1);
     assert.ok(!messages[0].includes('new-invitation-password'));
-    assert.ok(messages[0].includes('/invitacion/'));
+    assert.ok(messages[0].includes('/invitation/'));
     assert.equal((await publicPost(token)).status, 200);
     const activated = await fetch(base + '/v1/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Tenant-Host': 'invited.example' }, body: JSON.stringify({ email: 'worker-invite@example.com', password: 'new-invitation-password' }) });
     assert.equal(activated.status, 200);

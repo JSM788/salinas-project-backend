@@ -8,7 +8,15 @@ import { Endpoint } from '../../../common/decorators/endpoint.decorator';
 import { CurrentPrincipal } from '../../../common/decorators/principal.decorator';
 import { SessionGuard } from '../../../common/guards/session.guard';
 import { Principal } from '../../../common/types/principal';
-import { teamMemberResponseSchema, teamQuerySchema, teamProfileSchema, TeamProfileInput } from '../dto/team.dto';
+import {
+  teamMemberResponseSchema,
+  teamQuerySchema,
+  teamProfileSchema,
+  TeamProfileInput,
+  companySettingsSchema,
+  companySettingsResponseSchema,
+  CompanySettingsInput,
+} from '../dto/team.dto';
 import { ZodValidationPipe } from '../../../common/http/zod-validation.pipe';
 import { TeamService } from '../services/team.service';
 
@@ -49,4 +57,28 @@ export class TeamController {
     @Param('membershipId', new ZodValidationPipe(z.uuid())) membershipId: string,
     @Query(new ZodValidationPipe(paginationQuerySchema.strict())) query: PaginationQuery,
   ) { return this.team.history(principal, membershipId, query); }
+
+  @Endpoint({
+    method: 'get',
+    path: 'company/settings',
+    output: companySettingsResponseSchema,
+  })
+  getCompanySettings(@CurrentPrincipal() principal: Principal) {
+    return this.team.getCompanySettings(principal);
+  }
+
+  @Endpoint({
+    method: 'post',
+    path: 'company/settings',
+    input: companySettingsSchema,
+    output: companySettingsResponseSchema,
+    operationKey: true,
+  })
+  updateCompanySettings(
+    @CurrentPrincipal() principal: Principal,
+    @OperationKey() key: string,
+    @Body(new ZodValidationPipe(companySettingsSchema)) input: CompanySettingsInput,
+  ) {
+    return this.team.updateCompanySettings(principal, key, input);
+  }
 }

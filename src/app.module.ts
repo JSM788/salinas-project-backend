@@ -10,6 +10,7 @@ import { TenantRoutingModule } from './common/guards/tenant-routing.module';
 import { PlatformModule } from './modules/platform/platform.module';
 import { TeamModule } from './modules/team/team.module';
 import { InvitationsModule } from './modules/invitations/invitations.module';
+import { OrdersModule } from './modules/orders/orders.module';
 
 @Module({})
 export class AppModule {
@@ -29,6 +30,7 @@ export class AppModule {
         PlatformModule,
         TeamModule,
         InvitationsModule,
+        OrdersModule,
       ],
     };
   }

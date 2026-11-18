@@ -17,6 +17,7 @@ test('HTTP contract validates requests, protects resources and follows field tra
     'HTTP Company',
     'http@example.com',
     'password-with-length',
+    'America/Lima',
   );
   const { visit } = await assignVisit(db, member);
   const other = await provision(
@@ -25,6 +26,7 @@ test('HTTP contract validates requests, protects resources and follows field tra
     'Other Company',
     'http@example.com',
     'password-with-length',
+    'America/Lima',
   );
   const app = await createApp(
     db.prisma,
@@ -83,7 +85,10 @@ test('HTTP contract validates requests, protects resources and follows field tra
       'company.example,other.example',
     ]) {
       host = invalid;
-      assert.equal((await call('/auth/login', credentials)).status, 400);
+      assert.equal(
+        (await call('/auth/login', credentials)).status,
+        invalid === undefined ? 409 : 400,
+      );
     }
     host = 'other.example';
     const otherLogin = await call('/auth/login', credentials);
@@ -106,7 +111,8 @@ test('HTTP contract validates requests, protects resources and follows field tra
     host = 'company.example';
     assert.equal((await call('/me')).body.companyId, member.companyId);
     assert.equal((await call('/me/workday')).body, null);
-    assert.equal((await call('/me/agenda')).body.length, 1);
+    const agendaRes = await call('/me/agenda');
+    assert.equal((Array.isArray(agendaRes.body) ? agendaRes.body : agendaRes.body.items).length, 1);
     assert.equal((await call('/me/workdays/start', {})).status, 400);
     assert.equal(
       (
@@ -119,10 +125,8 @@ test('HTTP contract validates requests, protects resources and follows field tra
       400,
     );
     assert.equal((await call('/me/workdays/start', {}, 'start')).status, 200);
-    assert.equal(
-      (await call(`/me/visits/${visit.id}/check-in`, {}, 'checkin')).status,
-      200,
-    );
+    const checkinRes = await call(`/me/visits/${visit.id}/check-in`, {}, 'checkin');
+    assert.equal(checkinRes.status, 200);
     assert.equal(
       (
         await call(

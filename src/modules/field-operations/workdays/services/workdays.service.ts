@@ -4,7 +4,7 @@ import { Principal } from '../../../../common/types/principal';
 import { businessDate, databaseDate } from '../../../../common/business-date';
 import { reject } from '../../../../common/errors/application-error';
 import { FieldCommandsService } from '../../services/field-commands.service';
-import { EndWorkdayDto, workdayResponse } from '../dto/workday.dto';
+import { EndWorkdayDto, StartWorkdayDto, workdayResponse } from '../dto/workday.dto';
 import { businessDateWindow } from '../../management/services/business-date-window';
 import { pageResult, PaginationQuery, paginationQuerySchema } from '../../../../common/pagination';
 import { workdayStatistics } from './workday-statistics';
@@ -94,12 +94,13 @@ export class WorkdaysService {
     });
   }
 
-  start(principal: Principal, key: string) {
+  start(principal: Principal, key: string, input: StartWorkdayDto = {}) {
+    const payload = input && Object.keys(input).length > 0 ? input : null;
     return this.commands.execute(
       principal,
       key,
       'start_workday',
-      null,
+      payload,
       async (tx) => {
         const where = {
           companyId: principal.companyId,
@@ -111,7 +112,13 @@ export class WorkdaysService {
           reject('workday_already_started');
         const date = databaseDate(businessDate(new Date(), principal.timeZone));
         const day = await tx.workday.create({
-          data: { ...where, businessDate: date, role: principal.role },
+          data: {
+            ...where,
+            businessDate: date,
+            role: principal.role,
+            startLatitude: input.latitude ?? null,
+            startLongitude: input.longitude ?? null,
+          },
         });
         // Freeze today's planned visits into this workday before any visit is checked in.
         const window = businessDateWindow(date.toISOString().slice(0, 10), principal.timeZone);
@@ -159,7 +166,12 @@ export class WorkdaysService {
         }
         const updated = await tx.workday.update({
           where: { id: day.id },
-          data: { status: 'completed', endedAt: new Date() },
+          data: {
+            status: 'completed',
+            endedAt: new Date(),
+            endLatitude: input.latitude ?? null,
+            endLongitude: input.longitude ?? null,
+          },
         });
         const statistics = await workdayStatistics(tx, [day.id]);
         return workdayResponse(updated, statistics.get(day.id)!);

@@ -118,13 +118,36 @@ test('Prisma baseline adopts legacy records without resetting data, hashes, sess
         'schema_migrations',
       ].map((table) => db.query(`SELECT * FROM ${table} ORDER BY 1`)),
     );
-    // The additive audit column must be empty, while every legacy column stays identical.
-    const legacyVisits = after[2].map(({ audit, ...legacyVisit }) => {
-      assert.equal(audit, null);
-      return legacyVisit;
-    });
+    // The additive columns must be empty/default, while every legacy column stays identical.
+    const legacyVisits = after[2].map(
+      ({
+        audit,
+        stop_order,
+        version,
+        planned_role,
+        execution_role,
+        cancelled_at,
+        cancellation_reason,
+        check_in_latitude,
+        check_in_longitude,
+        ...legacyVisit
+      }) => {
+        assert.equal(audit, null);
+        assert.equal(check_in_latitude, null);
+        assert.equal(check_in_longitude, null);
+        return legacyVisit;
+      },
+    );
     const legacyUsers = after[0].map(
-      ({ display_name, is_platform_owner, ...legacyUser }) => {
+      ({
+        display_name,
+        is_platform_owner,
+        phone,
+        platform_version,
+        activated_at,
+        password_changed_at,
+        ...legacyUser
+      }) => {
         assert.equal(display_name, null);
         assert.equal(is_platform_owner, false);
         return legacyUser;

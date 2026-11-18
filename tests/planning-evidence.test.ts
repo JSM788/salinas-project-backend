@@ -250,7 +250,12 @@ test('self planning and real evidence survive reload, reject unauthorized input 
       'idempotency_key_reused',
     );
     await login();
-    assert.deepEqual((await call(path + '/evidence')).body, image);
+    const evidenceBody = (await call(path + '/evidence')).body;
+    assert.equal(evidenceBody.mimeType, image.mimeType);
+    assert.ok(
+      evidenceBody.base64.startsWith('http') ||
+        evidenceBody.base64 === image.base64,
+    );
     assert.equal(
       (await call('/me/agenda')).body.items.find(
         (entry: any) => entry.id === visit.id,

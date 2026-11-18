@@ -11,6 +11,7 @@ import { PlatformPrincipal } from "../../../common/types/principal";
 import { TenantResolver } from "../../../common/guards/tenant-routing.module";
 import { reject, rejectField, isUniqueConstraint } from "../../../common/errors/application-error";
 import { CredentialsService } from "../../identity/services/credentials.service";
+import { storage } from "../../../common/storage.service";
 import {
   CompanyInput,
   CompanyEditInput,
@@ -20,6 +21,8 @@ import {
   MemberEditInput,
   companyResponseSchema,
   PlatformAuditListQuery,
+  PlatformBrandingInput,
+  PlatformBrandingResponse,
 } from "../dto/platform.dto";
 import { PlatformAccessService } from "./platform-access.service";
 import { PlatformCommandsService } from "./platform-commands.service";
@@ -641,6 +644,61 @@ export class PlatformService {
         total,
         query,
       );
+    });
+  }
+
+  async getBranding(): Promise<PlatformBrandingResponse> {
+    const op = await this.prisma.platformOperation.findFirst({
+      where: { key: 'platform_branding' },
+      orderBy: { createdAt: 'desc' },
+    });
+    const details = op?.response as Record<string, unknown> | null;
+    return {
+      appName: typeof details?.appName === 'string' && details.appName.trim().length > 0 ? details.appName.trim() : 'Salinas',
+      logoUrl: typeof details?.logoUrl === 'string' && details.logoUrl.trim().length > 0 ? details.logoUrl.trim() : null,
+      updatedAt: typeof details?.updatedAt === 'string' ? details.updatedAt : new Date().toISOString(),
+    };
+  }
+
+  async updateBranding(
+    principal: PlatformPrincipal,
+    input: PlatformBrandingInput,
+  ): Promise<PlatformBrandingResponse> {
+    let finalLogoUrl = input.logoUrl ?? null;
+    if (input.logoBase64 && input.logoMimeType) {
+      const uploaded = await storage.uploadBase64(input.logoBase64, input.logoMimeType, 'logos');
+      if (uploaded) finalLogoUrl = uploaded;
+    }
+    const appName = input.appName.trim() || 'Salinas';
+    const logoUrl = finalLogoUrl ? finalLogoUrl.trim() : null;
+    const updatedAt = new Date().toISOString();
+
+    return this.prisma.transaction(async (tx) => {
+      await this.access.requireOwner(tx, principal);
+      await tx.platformOperation.upsert({
+        where: {
+          actorUserId_key: {
+            actorUserId: principal.userId,
+            key: 'platform_branding',
+          },
+        },
+        create: {
+          actorUserId: principal.userId,
+          key: 'platform_branding',
+          fingerprint: 'platform_branding',
+          response: { appName, logoUrl, updatedAt },
+        },
+        update: {
+          fingerprint: 'platform_branding',
+          response: { appName, logoUrl, updatedAt },
+        },
+      });
+
+      return {
+        appName,
+        logoUrl,
+        updatedAt,
+      };
     });
   }
 }

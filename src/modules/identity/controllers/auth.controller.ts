@@ -32,7 +32,10 @@ export class AuthController {
     @Body(new ZodValidationPipe(credentialsSchema)) input: LoginDto,
     @Headers('x-tenant-host') host: string | undefined,
   ) {
-    return this.auth.login(host === undefined ? undefined : await this.tenants.resolve(host), input);
+    return this.auth.login(
+      host === undefined ? undefined : await this.tenants.resolve(host),
+      input,
+    );
   }
 
   @Endpoint({
@@ -46,7 +49,11 @@ export class AuthController {
     @Body(new ZodValidationPipe(credentialsSchema)) input: LoginDto,
     @Headers('x-tenant-host') host: string | undefined,
   ) {
-    return this.auth.login(host === undefined ? undefined : await this.tenants.resolve(host), input, true);
+    return this.auth.login(
+      host === undefined ? undefined : await this.tenants.resolve(host),
+      input,
+      true,
+    );
   }
 
   @Endpoint({

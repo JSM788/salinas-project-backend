@@ -5,7 +5,7 @@ import {
 } from '../../../../database/prisma.service';
 import { Principal } from '../../../../common/types/principal';
 import { reject, rejectField } from '../../../../common/errors/application-error';
-import { businessDate, databaseDate } from '../../../../common/business-date';
+import { businessDate, databaseDate, localTimeToUtc } from '../../../../common/business-date';
 import { FieldCommandsService } from '../../services/field-commands.service';
 import { visitResponse } from '../../visits/dto/visit.dto';
 import { workdayResponse } from '../../workdays/dto/workday.dto';
@@ -199,7 +199,16 @@ export class FieldManagementService {
         companyId: principal.companyId,
         ...(filters.membershipId ? { membershipId: filters.membershipId } : {}),
         ...(filters.role ? { role: filters.role } : {}),
-        ...(filters.date ? { businessDate: databaseDate(filters.date) } : {}),
+        ...(filters.date
+          ? { businessDate: databaseDate(filters.date) }
+          : filters.dateFrom || filters.dateTo
+          ? {
+              businessDate: {
+                ...(filters.dateFrom ? { gte: databaseDate(filters.dateFrom) } : {}),
+                ...(filters.dateTo ? { lte: databaseDate(filters.dateTo) } : {}),
+              },
+            }
+          : {}),
         ...(filters.status ? { status: filters.status } : {}),
         ...(filters.search ? { membership: { user: { email: { contains: filters.search, mode: 'insensitive' } } } } : {}),
       };
@@ -231,10 +240,12 @@ export class FieldManagementService {
       if (!visit) reject('visit_not_found');
       const evidence = visit.evidence[0];
       if (!evidence) return null;
-      const url = Buffer.from(evidence.content).toString('utf-8');
+      const content = Buffer.from(evidence.content);
+      const str = content.toString('utf-8');
+      const isUrl = str.startsWith('http://') || str.startsWith('https://');
       return {
         mimeType: evidence.mimeType,
-        base64: url,
+        base64: isUrl ? str : content.toString('base64'),
       };
     });
   }
@@ -379,10 +390,15 @@ export class FieldManagementService {
       input,
       async (tx, context) => {
         const member = await this.target(tx, principal, input.membershipId);
-        const unlockedDays: SyncWeeklyRoutesDto['days'] = [];
+        const todayDate = businessDate(new Date(), principal.timeZone || 'America/Lima');
+        const unlockedDays: Array<{ date: string; customerIds: string[]; nonPendingIds: Set<string> }> = [];
 
         // Phase 1: clear replaceable pending visits on unlocked days before checking week uniqueness.
+        // Past days and days whose workday has already started (active or ended) are frozen and untouchable.
         for (const day of input.days) {
+          if (day.date < todayDate) {
+            continue;
+          }
           const dateObj = databaseDate(day.date);
           const workday = await tx.workday.findFirst({
             where: {
@@ -398,7 +414,6 @@ export class FieldManagementService {
             continue;
           }
 
-          unlockedDays.push(day);
           const window = businessDateWindow(day.date, principal.timeZone);
           await tx.visit.deleteMany({
             where: {
@@ -408,15 +423,22 @@ export class FieldManagementService {
               scheduledAt: { gte: window.gte, lt: window.lt },
             },
           });
+
+          unlockedDays.push({
+            date: day.date,
+            customerIds: day.customerIds,
+            nonPendingIds: new Set<string>(),
+          });
         }
 
         // Phase 2: prevent scheduling customers already visited or scheduled elsewhere in the same week.
         const insertingByWeek = new Map<string, { date: string; customerIds: string[] }>();
         for (const day of unlockedDays) {
-          if (day.customerIds.length === 0) continue;
+          const toInsert = day.customerIds.filter((id) => !day.nonPendingIds.has(id));
+          if (toInsert.length === 0) continue;
           const weekKey = businessWeekKey(day.date);
           const entry = insertingByWeek.get(weekKey) ?? { date: day.date, customerIds: [] };
-          entry.customerIds.push(...day.customerIds);
+          entry.customerIds.push(...toInsert);
           insertingByWeek.set(weekKey, entry);
         }
 
@@ -440,6 +462,7 @@ export class FieldManagementService {
         for (const day of unlockedDays) {
           for (let index = 0; index < day.customerIds.length; index++) {
             const customerId = day.customerIds[index];
+            if (day.nonPendingIds.has(customerId)) continue;
             const customer = await tx.customer.findFirst({
               where: { id: customerId, companyId: principal.companyId },
             });
@@ -468,7 +491,11 @@ export class FieldManagementService {
             const minute = (index % 2) * 30;
             const hourStr = String(hour).padStart(2, '0');
             const minStr = String(minute).padStart(2, '0');
-            const scheduledAt = new Date(`${day.date}T${hourStr}:${minStr}:00Z`);
+            const scheduledAt = localTimeToUtc(
+              day.date,
+              `${hourStr}:${minStr}`,
+              principal.timeZone || 'America/Lima',
+            );
 
             await tx.visit.create({
               data: {

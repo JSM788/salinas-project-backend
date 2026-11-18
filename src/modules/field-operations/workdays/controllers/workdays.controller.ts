@@ -11,6 +11,8 @@ import { emptyBodySchema } from '../../../identity/dto/login.dto';
 import {
   EndWorkdayDto,
   endWorkdaySchema,
+  StartWorkdayDto,
+  startWorkdaySchema,
   workdayResponseSchema,
 } from '../dto/workday.dto';
 import { WorkdaysService } from '../services/workdays.service';
@@ -47,16 +49,16 @@ export class WorkdaysController {
   @Endpoint({
     method: 'post',
     path: 'workdays/start',
-    input: emptyBodySchema,
+    input: startWorkdaySchema,
     output: workdayResponseSchema,
     operationKey: true,
   })
   start(
     @CurrentPrincipal() principal: Principal,
     @OperationKey() key: string,
-    @Body(new ZodValidationPipe(emptyBodySchema)) _input: Record<string, never>,
+    @Body(new ZodValidationPipe(startWorkdaySchema)) input: StartWorkdayDto,
   ) {
-    return this.workdays.start(principal, key);
+    return this.workdays.start(principal, key, input);
   }
 
   @Endpoint({

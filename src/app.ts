@@ -19,7 +19,12 @@ export async function createApp(
     { logger: false, abortOnError: false },
   );
   app.use(requestContext(logging));
-  app.useBodyParser('json', { limit: '1450kb' });
+  app.useBodyParser('json', {
+    limit: '1450kb',
+    verify: (req: { rawBody?: Buffer }, _res: unknown, buf: Buffer) => {
+      req.rawBody = buf;
+    },
+  });
   app.useGlobalFilters(new ApiExceptionFilter());
   if (origins.length > 0) {
     app.enableCors({

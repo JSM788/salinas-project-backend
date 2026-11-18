@@ -77,12 +77,27 @@ test('weekly routes sync blocks repeating a customer within the same week', asyn
       })
     ).body.token as string;
 
+    // Compute relative future Monday..Thursday and following Monday so test is date-independent.
+    const now = new Date();
+    const utcDay = now.getUTCDay();
+    const daysUntilNextMon = ((8 - utcDay) % 7) || 7;
+    const addDaysIso = (offset: number) => {
+      const d = new Date(now);
+      d.setUTCDate(d.getUTCDate() + daysUntilNextMon + offset);
+      return d.toISOString().slice(0, 10);
+    };
+    const mon = addDaysIso(0);
+    const tue = addDaysIso(1);
+    const wed = addDaysIso(2);
+    const thu = addDaysIso(3);
+    const nextMon = addDaysIso(7);
+
     // 1. Rejects repeating customerA across Monday and Tuesday in the same payload.
     const dupPayload = await call(managerToken, '/field-operations/routes/sync', {
       membershipId: commercial.membershipId,
       days: [
-        { date: '2026-11-09', customerIds: [customerA.id] },
-        { date: '2026-11-10', customerIds: [customerA.id] },
+        { date: mon, customerIds: [customerA.id] },
+        { date: tue, customerIds: [customerA.id] },
       ],
     });
     assert.equal(dupPayload.status, 409);
@@ -92,8 +107,8 @@ test('weekly routes sync blocks repeating a customer within the same week', asyn
     const initial = await call(managerToken, '/field-operations/routes/sync', {
       membershipId: commercial.membershipId,
       days: [
-        { date: '2026-11-09', customerIds: [customerA.id] },
-        { date: '2026-11-10', customerIds: [customerB.id] },
+        { date: mon, customerIds: [customerA.id] },
+        { date: tue, customerIds: [customerB.id] },
       ],
     });
     assert.equal(initial.status, 200);
@@ -103,9 +118,9 @@ test('weekly routes sync blocks repeating a customer within the same week', asyn
     const moved = await call(managerToken, '/field-operations/routes/sync', {
       membershipId: commercial.membershipId,
       days: [
-        { date: '2026-11-09', customerIds: [] },
-        { date: '2026-11-10', customerIds: [customerB.id] },
-        { date: '2026-11-11', customerIds: [customerA.id] },
+        { date: mon, customerIds: [] },
+        { date: tue, customerIds: [customerB.id] },
+        { date: wed, customerIds: [customerA.id] },
       ],
     });
     assert.equal(moved.status, 200);
@@ -114,7 +129,7 @@ test('weekly routes sync blocks repeating a customer within the same week', asyn
     // 4. Clear Wednesday, then mark Monday completed with customerA; Thursday must fail.
     const clearedWed = await call(managerToken, '/field-operations/routes/sync', {
       membershipId: commercial.membershipId,
-      days: [{ date: '2026-11-11', customerIds: [] }],
+      days: [{ date: wed, customerIds: [] }],
     });
     assert.equal(clearedWed.status, 200);
 
@@ -122,10 +137,10 @@ test('weekly routes sync blocks repeating a customer within the same week', asyn
       data: {
         companyId: manager.companyId,
         membershipId: commercial.membershipId,
-        businessDate: new Date('2026-11-09T00:00:00.000Z'),
+        businessDate: new Date(`${mon}T00:00:00.000Z`),
         status: 'completed',
-        startedAt: new Date('2026-11-09T14:00:00.000Z'),
-        endedAt: new Date('2026-11-09T18:00:00.000Z'),
+        startedAt: new Date(`${mon}T14:00:00.000Z`),
+        endedAt: new Date(`${mon}T18:00:00.000Z`),
       },
     });
     await db.prisma.visit.create({
@@ -134,10 +149,10 @@ test('weekly routes sync blocks repeating a customer within the same week', asyn
         membershipId: commercial.membershipId,
         customerId: customerA.id,
         workdayId: mondayWorkday.id,
-        scheduledAt: new Date('2026-11-09T15:00:00.000Z'),
+        scheduledAt: new Date(`${mon}T15:00:00.000Z`),
         status: 'completed',
-        arrivedAt: new Date('2026-11-09T15:10:00.000Z'),
-        endedAt: new Date('2026-11-09T15:30:00.000Z'),
+        arrivedAt: new Date(`${mon}T15:10:00.000Z`),
+        endedAt: new Date(`${mon}T15:30:00.000Z`),
         result: 'attended',
       },
     });
@@ -145,7 +160,7 @@ test('weekly routes sync blocks repeating a customer within the same week', asyn
     const repeatVisited = await call(managerToken, '/field-operations/routes/sync', {
       membershipId: commercial.membershipId,
       days: [
-        { date: '2026-11-12', customerIds: [customerA.id] },
+        { date: thu, customerIds: [customerA.id] },
       ],
     });
     assert.equal(repeatVisited.status, 409);
@@ -155,7 +170,7 @@ test('weekly routes sync blocks repeating a customer within the same week', asyn
     const nextWeek = await call(managerToken, '/field-operations/routes/sync', {
       membershipId: commercial.membershipId,
       days: [
-        { date: '2026-11-16', customerIds: [customerA.id] },
+        { date: nextMon, customerIds: [customerA.id] },
       ],
     });
     assert.equal(nextWeek.status, 200);

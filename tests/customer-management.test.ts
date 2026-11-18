@@ -228,7 +228,13 @@ test('customer creation persists metadata, enforces tenant uniqueness and reject
       await fetch(url + '/v1/me/customers', { headers })
     ).json() as any).items as any[];
     assert.deepEqual(mine, [
-      { id: created.id, name: input.name, address: input.address },
+      {
+        id: created.id,
+        name: input.name,
+        address: input.address,
+        latitude: null,
+        longitude: null,
+      },
     ]);
   } finally {
     await app.close();

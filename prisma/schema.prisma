@@ -23,6 +23,8 @@ model Company {
   customers            Customer[]
   domains              CompanyDomain[]
   platformAuditEntries PlatformAuditEntry[]
+  integrations         CompanyIntegration[]
+  trackedOrders        TrackedOrder[]
 
   @@index([createdAt(sort: Desc), id])
   @@map("companies")
@@ -96,6 +98,7 @@ model Membership {
   visits                   Visit[]
   operations               Operation[]
   auditEntries             AuditEntry[]
+  trackedOrders            TrackedOrder[]
 
   @@unique([companyId, userId])
   @@unique([companyId, id])
@@ -150,6 +153,7 @@ model Customer {
   company           Company              @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   assignments       CustomerAssignment[]
   visits            Visit[]
+  trackedOrders     TrackedOrder[]
 
   @@unique([companyId, id])
   @@unique([companyId, ruc], map: "customers_company_ruc")
@@ -170,16 +174,20 @@ model CustomerAssignment {
 }
 
 model Workday {
-  id           String     @id @default(uuid()) @db.Uuid
-  role         String?
-  companyId    String     @map("company_id") @db.Uuid
-  membershipId String     @map("membership_id") @db.Uuid
-  status       String     @default("active")
-  startedAt    DateTime   @default(now()) @map("started_at") @db.Timestamptz(6)
-  endedAt      DateTime?  @map("ended_at") @db.Timestamptz(6)
-  businessDate DateTime   @map("business_date") @db.Date
-  membership   Membership @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
-  visits       Visit[]
+  id             String     @id @default(uuid()) @db.Uuid
+  role           String?
+  companyId      String     @map("company_id") @db.Uuid
+  membershipId   String     @map("membership_id") @db.Uuid
+  status         String     @default("active")
+  startedAt      DateTime   @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt        DateTime?  @map("ended_at") @db.Timestamptz(6)
+  businessDate   DateTime   @map("business_date") @db.Date
+  startLatitude  Float?     @map("start_latitude")
+  startLongitude Float?     @map("start_longitude")
+  endLatitude    Float?     @map("end_latitude")
+  endLongitude   Float?     @map("end_longitude")
+  membership     Membership @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  visits         Visit[]
 
   @@unique([companyId, id])
   @@unique([companyId, membershipId, businessDate])
@@ -203,6 +211,8 @@ model Visit {
   status             String          @default("pending")
   arrivedAt          DateTime?       @map("arrived_at") @db.Timestamptz(6)
   endedAt            DateTime?       @map("ended_at") @db.Timestamptz(6)
+  checkInLatitude    Float?          @map("check_in_latitude")
+  checkInLongitude   Float?          @map("check_in_longitude")
   result             String?
   observations       String?
   audit              Json?
@@ -331,4 +341,79 @@ model AccessEvent {
   @@index([companyId, membershipId, occurredAt, id])
   @@index([invitationId, occurredAt])
   @@map("access_events")
+}
+
+model CompanyIntegration {
+  id               String    @id @default(uuid()) @db.Uuid
+  companyId        String    @map("company_id") @db.Uuid
+  provider         String
+  apiKeyHash       String    @unique @map("api_key_hash")
+  apiKeyPrefix     String    @map("api_key_prefix")
+  hmacSecret       String?   @map("hmac_secret")
+  requireSignature Boolean   @default(false) @map("require_signature")
+  active           Boolean   @default(true)
+  lastSyncAt       DateTime? @map("last_sync_at") @db.Timestamptz(6)
+  createdAt        DateTime  @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt        DateTime  @updatedAt @map("updated_at") @db.Timestamptz(6)
+  company          Company   @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([companyId, provider])
+  @@map("company_integrations")
+}
+
+model TrackedOrder {
+  id                      String              @id @default(uuid()) @db.Uuid
+  companyId               String              @map("company_id") @db.Uuid
+  externalOrderId         String              @map("external_order_id")
+  origin                  String              @default("brango")
+  membershipId            String?             @map("membership_id") @db.Uuid
+  customerId              String?             @map("customer_id") @db.Uuid
+  status                  String
+  originCode              String              @map("origin_code")
+  linkStatus              String              @default("pending_link") @map("link_status")
+  linkReason              String?             @map("link_reason")
+  reportedCommercialPhone String              @map("reported_commercial_phone")
+  reportedCommercialName  String?             @map("reported_commercial_name")
+  reportedCustomerName    String              @map("reported_customer_name")
+  reportedCustomerRuc     String?             @map("reported_customer_ruc")
+  customerAddress         String?             @map("customer_address")
+  district                String?
+  carrierName             String?             @map("carrier_name")
+  carrierPhone            String?             @map("carrier_phone")
+  packagesCount           Int?                @map("packages_count")
+  totalAmount             String?             @map("total_amount")
+  deliveryDateLabel       String?             @map("delivery_date_label")
+  notes                   String?
+  evidence                Json?
+  lastEventAt             DateTime            @default(now()) @map("last_event_at") @db.Timestamptz(6)
+  createdAt               DateTime            @default(now()) @map("created_at") @db.Timestamptz(6)
+  updatedAt               DateTime            @updatedAt @map("updated_at") @db.Timestamptz(6)
+  company                 Company             @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  membership              Membership?         @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  customer                Customer?           @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  events                  TrackedOrderEvent[]
+
+  @@unique([companyId, externalOrderId])
+  @@index([companyId, membershipId, lastEventAt(sort: Desc)])
+  @@index([companyId, status, lastEventAt(sort: Desc)])
+  @@index([companyId, linkStatus, lastEventAt(sort: Desc)])
+  @@map("tracked_orders")
+}
+
+model TrackedOrderEvent {
+  id              String       @id @default(uuid()) @db.Uuid
+  companyId       String       @map("company_id") @db.Uuid
+  orderId         String       @map("order_id") @db.Uuid
+  externalEventId String?      @map("external_event_id")
+  status          String
+  originCode      String       @map("origin_code")
+  actor           String
+  note            String
+  occurredAt      DateTime     @default(now()) @map("occurred_at") @db.Timestamptz(6)
+  createdAt       DateTime     @default(now()) @map("created_at") @db.Timestamptz(6)
+  order           TrackedOrder @relation(fields: [orderId], references: [id], onDelete: Cascade, onUpdate: NoAction)
+
+  @@unique([companyId, orderId, externalEventId])
+  @@index([orderId, occurredAt(sort: Asc)])
+  @@map("tracked_order_events")
 }

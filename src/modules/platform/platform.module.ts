@@ -2,6 +2,7 @@ import { InvitationsModule } from '../invitations/invitations.module';
 import { Module } from '@nestjs/common';
 import { IdentityModule } from '../identity/identity.module';
 import { PlatformController } from './controllers/platform.controller';
+import { PublicPlatformController } from './controllers/public-platform.controller';
 import { LogsClientController } from './controllers/logs-client.controller';
 import { PlatformAccessService } from './services/platform-access.service';
 import { PlatformCommandsService } from './services/platform-commands.service';
@@ -10,7 +11,7 @@ import { PlatformLogsService } from './services/platform-logs.service';
 
 @Module({
   imports: [IdentityModule, InvitationsModule],
-  controllers: [PlatformController, LogsClientController],
+  controllers: [PlatformController, PublicPlatformController, LogsClientController],
   providers: [PlatformAccessService, PlatformCommandsService, PlatformService, PlatformLogsService],
 })
 export class PlatformModule {}

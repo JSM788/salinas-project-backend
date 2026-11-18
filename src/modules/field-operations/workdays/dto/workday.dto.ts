@@ -2,6 +2,23 @@ import { z } from 'zod';
 import type { Workday } from '../../../../generated/prisma/client';
 
 const timestamp = z.iso.datetime({ offset: true });
+export const startWorkdaySchema = z
+  .object({
+    latitude: z.number().finite().min(-90).max(90).optional(),
+    longitude: z.number().finite().min(-180).max(180).optional(),
+  })
+  .strict();
+export type StartWorkdayDto = z.infer<typeof startWorkdaySchema>;
+
+export const endWorkdaySchema = z
+  .object({
+    justification: z.string().max(1000).optional(),
+    latitude: z.number().finite().min(-90).max(90).optional(),
+    longitude: z.number().finite().min(-180).max(180).optional(),
+  })
+  .strict();
+export type EndWorkdayDto = z.infer<typeof endWorkdaySchema>;
+
 export const workdayResponseSchema = z.object({
   id: z.uuid(),
   company_id: z.uuid(),
@@ -11,15 +28,13 @@ export const workdayResponseSchema = z.object({
   role: z.enum(['commercial', 'merchandiser']).nullable(),
   started_at: timestamp,
   ended_at: timestamp.nullable(),
+  start_latitude: z.number().nullable().optional(),
+  start_longitude: z.number().nullable().optional(),
+  end_latitude: z.number().nullable().optional(),
+  end_longitude: z.number().nullable().optional(),
   completed_visits: z.number().int().nonnegative(),
   total_visits: z.number().int().nonnegative(),
 });
-export const endWorkdaySchema = z
-  .object({
-    justification: z.string().max(1000).optional(),
-  })
-  .strict();
-export type EndWorkdayDto = z.infer<typeof endWorkdaySchema>;
 
 export function workdayResponse(day: Workday, statistics: { completed_visits: number; total_visits: number }) {
   return workdayResponseSchema.parse({
@@ -31,6 +46,10 @@ export function workdayResponse(day: Workday, statistics: { completed_visits: nu
     role: day.role,
     started_at: day.startedAt.toISOString(),
     ended_at: day.endedAt?.toISOString() ?? null,
+    start_latitude: day.startLatitude ?? null,
+    start_longitude: day.startLongitude ?? null,
+    end_latitude: day.endLatitude ?? null,
+    end_longitude: day.endLongitude ?? null,
     ...statistics,
   });
 }

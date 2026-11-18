@@ -29,7 +29,12 @@ export class AuthService {
       reject('invalid_credentials');
     }
     const valid = await this.credentials.matchesPassword(input.password, user.passwordHash);
-    if (!valid || (user.blockedUntil && user.blockedUntil > new Date())) {
+    if (user.blockedUntil && user.blockedUntil > new Date()) {
+      // Attempts during an active lock must not feed the counter or extend the lock (third-party lockout DoS).
+      await this.prisma.accessEvent.create({ data: { userId: user.id, event: 'login_failed', outcome: 'invalid_credentials' } });
+      reject('invalid_credentials');
+    }
+    if (!valid) {
       await this.recordFailedLogin(user.id);
       reject('invalid_credentials');
     }
@@ -39,20 +44,10 @@ export class AuthService {
     );
     try {
       await this.prisma.transaction(async (tx) => {
-        // [MOMENTÁNEO / TESTING]: En entorno de pruebas en un solo host (sin DNS wildcard activo),
-        // si el usuario no tiene membresía en el slug del host, permitimos buscar su membresía activa
-        // directa por usuario para que pueda acceder a su empresa asignada.
-        let memberships = user.isPlatformOwner ? [] : await tx.membership.findMany({
+        const memberships = user.isPlatformOwner ? [] : await tx.membership.findMany({
           where: { userId: user.id, active: true, company: { status: 'active', ...(company ? { slug: company } : {}) } },
           orderBy: { id: 'asc' }, take: 2,
         });
-        if (!user.isPlatformOwner && memberships.length === 0 && company) {
-          // Fallback momentáneo: buscar la membresía activa del usuario en cualquier empresa activa
-          memberships = await tx.membership.findMany({
-            where: { userId: user.id, active: true, company: { status: 'active' } },
-            orderBy: { id: 'asc' }, take: 2,
-          });
-        }
         if (!user.isPlatformOwner && memberships.length === 0) reject('invalid_credentials');
         if (memberships.length > 1) reject('company_selection_required');
         const membership = memberships[0];
@@ -86,9 +81,12 @@ export class AuthService {
 
   private async recordFailedLogin(userId: string): Promise<void> {
     await this.prisma.transaction(async (tx) => {
+      const current = await tx.user.findUniqueOrThrow({ where: { id: userId } });
+      // An expired lock starts a fresh count instead of carrying the old failures over.
+      const lockExpired = current.blockedUntil !== null && current.blockedUntil <= new Date();
       const failed = await tx.user.update({
         where: { id: userId },
-        data: { failures: { increment: 1 } },
+        data: lockExpired ? { failures: 1, blockedUntil: null } : { failures: { increment: 1 } },
       });
       await recordAccessEvent(tx, { userId, event: 'login_failed', outcome: 'invalid_credentials' });
       if (failed.failures >= this.policy.LOGIN_MAX_FAILURES) {
@@ -123,10 +121,7 @@ export class AuthService {
       };
       return principal;
     }
-    // [MOMENTÁNEO / TESTING]: En entorno de pruebas en un solo host (sin DNS wildcard activo),
-    // si la sesión activa no coincide con el slug del host actual, permitimos resolver la sesión
-    // de la empresa del usuario.
-    let session = await this.prisma.session.findFirst({
+    const session = await this.prisma.session.findFirst({
       where: {
         tokenHash,
         expiresAt: { gt: new Date() },
@@ -144,26 +139,6 @@ export class AuthService {
         },
       },
     });
-    if (!session && company) {
-      session = await this.prisma.session.findFirst({
-        where: {
-          tokenHash,
-          expiresAt: { gt: new Date() },
-          membership: {
-            active: true,
-            company: { status: 'active' },
-          },
-        },
-        include: {
-          membership: {
-            include: {
-              user: { select: { email: true, isPlatformOwner: true } },
-              company: true,
-            },
-          },
-        },
-      });
-    }
     if (!session || session.membership.user.isPlatformOwner) reject('authentication_required');
     const member = session.membership;
     return {

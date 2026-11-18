@@ -12,6 +12,7 @@ import {
   customerFiltersSchema,
 } from '../dto/customer.dto';
 import { pageResult } from '../../../common/pagination';
+import { businessDate } from '../../../common/business-date';
 
 const includeAssignments = {
   assignments: {
@@ -50,23 +51,88 @@ export class CustomersService {
 
   assigned(principal: Principal, filters: CustomerFilters = customerFiltersSchema.parse({})) {
     return this.prisma.readTransaction(async (tx) => {
-      const where: Prisma.CustomerWhereInput = {
-        AND: [this.customerWhere(principal, filters), { assignments: {
-          some: {
-            membershipId: principal.membershipId,
-            companyId: principal.companyId,
-          },
-        } }],
-      };
+      const baseWhere = this.customerWhere(principal, filters);
+      const where: Prisma.CustomerWhereInput =
+        filters.scope === 'company'
+          ? baseWhere
+          : {
+              AND: [
+                baseWhere,
+                {
+                  assignments: {
+                    some: {
+                      membershipId: principal.membershipId,
+                      companyId: principal.companyId,
+                    },
+                  },
+                },
+              ],
+            };
       const total = await tx.customer.count({ where });
       const items = await tx.customer.findMany({
-      where,
-      select: { id: true, name: true, address: true, latitude: true, longitude: true },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      skip: (filters.page - 1) * filters.pageSize,
-      take: filters.pageSize,
-    });
-      return pageResult(items, total, filters);
+        where,
+        select: { id: true, name: true, address: true, latitude: true, longitude: true },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (filters.page - 1) * filters.pageSize,
+        take: filters.pageSize,
+      });
+
+      if (filters.scope !== 'company' || items.length === 0) {
+        return pageResult(items, total, filters);
+      }
+
+      const todayKey = businessDate(new Date(), principal.timeZone);
+      const startWindow = new Date(Date.now() - 24 * 60 * 60 * 1000);
+      const endWindow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
+      const customerIds = items.map((c) => c.id);
+
+      const upcomingVisits = await tx.visit.findMany({
+        where: {
+          companyId: principal.companyId,
+          customerId: { in: customerIds },
+          status: { not: 'cancelled' },
+          scheduledAt: { gte: startWindow, lte: endWindow },
+          membership: { role: principal.role },
+        },
+        orderBy: { scheduledAt: 'asc' },
+        select: {
+          customerId: true,
+          status: true,
+          scheduledAt: true,
+          membership: {
+            select: { user: { select: { displayName: true, email: true } } },
+          },
+        },
+      });
+
+      const conflictMap = new Map<
+        string,
+        { status: string; scheduledAt: string; memberName: string; isToday: boolean }
+      >();
+      for (const v of upcomingVisits) {
+        const visitDate = businessDate(v.scheduledAt, principal.timeZone);
+        if (visitDate < todayKey) continue;
+        const isToday = visitDate === todayKey;
+        const existing = conflictMap.get(v.customerId);
+        if (!existing || (!existing.isToday && isToday)) {
+          conflictMap.set(v.customerId, {
+            status: v.status,
+            scheduledAt: v.scheduledAt.toISOString(),
+            memberName:
+              v.membership.user.displayName?.trim() || v.membership.user.email,
+            isToday,
+          });
+        }
+      }
+
+      return pageResult(
+        items.map((c) => ({
+          ...c,
+          conflictVisit: conflictMap.get(c.id) ?? null,
+        })),
+        total,
+        filters,
+      );
     });
   }
 

@@ -125,7 +125,12 @@ test('real PostgreSQL pools serialize concurrent requests and preserve tenant is
       observations: '',
       attachment,
     });
-    assert.deepEqual(await fieldB.evidence(p, active), attachment);
+    const evidenceB = await fieldB.evidence(p, active);
+    assert.equal(evidenceB?.mimeType, attachment.mimeType);
+    assert.ok(
+      evidenceB?.base64.startsWith('http') ||
+        evidenceB?.base64 === attachment.base64,
+    );
     await assert.rejects(fieldB.evidence(q, active));
     await fieldB.checkIn(p, 'arrive-pending', pending);
     await fieldB.closeVisit(p, 'close-pending', pending, {

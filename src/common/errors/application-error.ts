@@ -73,6 +73,13 @@ export const errorMessages = {
   digital_disconnection_active: 'Field operations are closed after 19:00 hrs for digital disconnection.',
   outside_geofence: 'Check-in must be performed within 50 meters of the customer location.',
   storage_upload_failed: 'Failed to upload photo evidence to Cloudflare R2.',
+  rate_limited: 'Too many requests. Try again later.',
+  integration_unauthorized: 'Invalid or inactive integration API key.',
+  integration_signature_invalid: 'Invalid or expired integration webhook signature.',
+  order_not_found: 'The tracked order was not found within this company.',
+  orders_forbidden: 'This membership cannot manage company order tracking.',
+  customer_visit_today_conflict:
+    'This customer already has a visit scheduled or completed today for your role.',
 } as const;
 
 export type ErrorCode = keyof typeof errorMessages;

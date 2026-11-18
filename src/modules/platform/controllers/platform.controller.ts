@@ -42,6 +42,9 @@ import {
   PlatformLogEventsQuery,
   PlatformLogUsersQuery,
   PlatformLogFilesQuery,
+  platformBrandingSchema,
+  platformBrandingResponseSchema,
+  PlatformBrandingInput,
 } from "../dto/platform.dto";
 import { PlatformService } from "../services/platform.service";
 import { PlatformLogsService } from "../services/platform-logs.service";
@@ -289,5 +292,18 @@ export class PlatformController {
     @Param("filename", new ZodValidationPipe(platformLogFileNameSchema)) filename: string,
   ) {
     return this.logs.getFileContent(principal, source, filename);
+  }
+
+  @Endpoint({
+    method: "post",
+    path: "branding",
+    input: platformBrandingSchema,
+    output: platformBrandingResponseSchema,
+  })
+  updateBranding(
+    @CurrentPrincipal() principal: PlatformPrincipal,
+    @Body(new ZodValidationPipe(platformBrandingSchema)) input: PlatformBrandingInput,
+  ) {
+    return this.platform.updateBranding(principal, input);
   }
 }

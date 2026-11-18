@@ -13,14 +13,13 @@ export interface GeofenceEvaluation {
 /**
  * Validación de geocerca de 50 metros para el check-in de visitas (Haversine).
  *
- * INTENCIONALMENTE DESACTIVADA (`false`) DURANTE LA ETAPA DE PRUEBAS:
- * - Varios clientes de prueba/producción aún tienen `latitude` y `longitude` en `null`
- *   (por ejemplo, cuando solo se registró el enlace corto `maps.app.goo.gl`).
- * - Además, bloquear por distancia impediría testear el flujo completo desde oficina o emulador.
- * - Para activar la validación estricta en producción, cambia esta bandera a `true` una vez que
- *   todos los clientes cuenten con sus coordenadas GPS reales registradas.
+ * ACTIVADA (`true`) PARA PRUEBAS EN CAMPO REALES:
+ * - Si un cliente no tiene coordenadas GPS (`latitude`/`longitude` en `null`),
+ *   el check-in pasa por compatibilidad (`bypassed: true`).
+ * - NOTA PARA DESARROLLO: Si necesitas volver a testear desde oficina o emulador
+ *   sin estar a 50 m del cliente, cambia temporalmente esta bandera a `false`.
  */
-export const CHECKIN_GEOFENCE_ENABLED = false;
+export const CHECKIN_GEOFENCE_ENABLED = true;
 export const CHECKIN_GEOFENCE_RADIUS_METERS = 50;
 
 const EARTH_RADIUS_METERS = 6371000;

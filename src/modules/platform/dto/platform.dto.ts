@@ -46,7 +46,7 @@ export const memberInputSchema = z
 export const memberStatusSchema = z.object({ active: z.boolean() }).strict();
 export const editMemberSchema = memberInputSchema
   .extend({
-    password: z.string().min(1).max(128).optional(),
+    password: z.string().min(8).max(128).optional(),
     email: z
       .email()
       .max(254)
@@ -172,7 +172,13 @@ export const clientLogInputSchema = z.object({
   companyId: z.string().trim().max(100).nullable().optional(),
   companyName: z.string().trim().max(200).nullable().optional(),
   screen: z.string().trim().max(300).nullable().optional(),
-  details: z.record(z.string(), z.unknown()).nullable().optional(),
+  details: z
+    .record(z.string(), z.unknown())
+    .refine((value) => JSON.stringify(value).length <= 4000, {
+      message: "details_too_large",
+    })
+    .nullable()
+    .optional(),
 }).strict();
 
 export const clientLogResponseSchema = z.object({
@@ -260,6 +266,22 @@ export const platformLogFileContentSchema = z.object({
 });
 
 export const platformLogFileNameSchema = z.string().regex(/^[A-Za-z0-9._-]+\.log$/);
+
+export const platformBrandingSchema = z.object({
+  appName: z.string().trim().min(1).max(100),
+  logoUrl: z.string().url().nullable().optional(),
+  logoBase64: z.string().optional(),
+  logoMimeType: z.enum(['image/png', 'image/jpeg', 'image/webp', 'image/svg+xml']).optional(),
+}).strict();
+
+export const platformBrandingResponseSchema = z.object({
+  appName: z.string(),
+  logoUrl: z.string().nullable(),
+  updatedAt: z.string(),
+});
+
+export type PlatformBrandingInput = z.infer<typeof platformBrandingSchema>;
+export type PlatformBrandingResponse = z.infer<typeof platformBrandingResponseSchema>;
 
 export type ClientLogInput = z.infer<typeof clientLogInputSchema>;
 export type PlatformLogEventsQuery = z.infer<typeof platformLogEventsQuerySchema>;
