@@ -44,10 +44,19 @@ export class AuthService {
     );
     try {
       await this.prisma.transaction(async (tx) => {
-        const memberships = user.isPlatformOwner ? [] : await tx.membership.findMany({
+        // [MOMENTÁNEO / TESTING]: En entorno de pruebas en un solo host (sin DNS wildcard activo),
+        // si el usuario no tiene membresía en el slug del host, permitimos buscar su membresía activa
+        // directa por usuario para que pueda acceder a su empresa asignada.
+        let memberships = user.isPlatformOwner ? [] : await tx.membership.findMany({
           where: { userId: user.id, active: true, company: { status: 'active', ...(company ? { slug: company } : {}) } },
           orderBy: { id: 'asc' }, take: 2,
         });
+        if (!user.isPlatformOwner && memberships.length === 0 && company) {
+          memberships = await tx.membership.findMany({
+            where: { userId: user.id, active: true, company: { status: 'active' } },
+            orderBy: { id: 'asc' }, take: 2,
+          });
+        }
         if (!user.isPlatformOwner && memberships.length === 0) reject('invalid_credentials');
         if (memberships.length > 1) reject('company_selection_required');
         const membership = memberships[0];
@@ -121,7 +130,10 @@ export class AuthService {
       };
       return principal;
     }
-    const session = await this.prisma.session.findFirst({
+    // [MOMENTÁNEO / TESTING]: En entorno de pruebas en un solo host (sin DNS wildcard activo),
+    // si la sesión activa no coincide con el slug del host actual, permitimos resolver la sesión
+    // de la empresa del usuario.
+    let session = await this.prisma.session.findFirst({
       where: {
         tokenHash,
         expiresAt: { gt: new Date() },
@@ -139,6 +151,26 @@ export class AuthService {
         },
       },
     });
+    if (!session && company) {
+      session = await this.prisma.session.findFirst({
+        where: {
+          tokenHash,
+          expiresAt: { gt: new Date() },
+          membership: {
+            active: true,
+            company: { status: 'active' },
+          },
+        },
+        include: {
+          membership: {
+            include: {
+              user: { select: { email: true, isPlatformOwner: true } },
+              company: true,
+            },
+          },
+        },
+      });
+    }
     if (!session || session.membership.user.isPlatformOwner) reject('authentication_required');
     const member = session.membership;
     return {
