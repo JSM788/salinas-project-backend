@@ -46,7 +46,7 @@ export const memberInputSchema = z
 export const memberStatusSchema = z.object({ active: z.boolean() }).strict();
 export const editMemberSchema = memberInputSchema
   .extend({
-    password: z.string().min(8).max(128).optional(),
+    password: z.string().min(4).max(128).optional(),
     email: z
       .email()
       .max(254)
