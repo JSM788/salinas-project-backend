@@ -654,7 +654,7 @@ export class PlatformService {
     });
     const details = op?.response as Record<string, unknown> | null;
     return {
-      appName: typeof details?.appName === 'string' && details.appName.trim().length > 0 ? details.appName.trim() : 'Salinas',
+      appName: typeof details?.appName === 'string' && details.appName.trim().length > 0 ? details.appName.trim() : 'Gestión Comercial',
       logoUrl: typeof details?.logoUrl === 'string' && details.logoUrl.trim().length > 0 ? details.logoUrl.trim() : null,
       updatedAt: typeof details?.updatedAt === 'string' ? details.updatedAt : new Date().toISOString(),
     };
@@ -669,7 +669,7 @@ export class PlatformService {
       const uploaded = await storage.uploadBase64(input.logoBase64, input.logoMimeType, 'logos');
       if (uploaded) finalLogoUrl = uploaded;
     }
-    const appName = input.appName.trim() || 'Salinas';
+    const appName = input.appName.trim() || 'Gestión Comercial';
     const logoUrl = finalLogoUrl ? finalLogoUrl.trim() : null;
     const updatedAt = new Date().toISOString();
 

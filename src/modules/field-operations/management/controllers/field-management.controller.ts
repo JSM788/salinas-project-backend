@@ -1,4 +1,5 @@
 import { Body, Controller, Param, Query, Res, UseGuards } from '@nestjs/common';
+import { z } from 'zod';
 import { Endpoint } from '../../../../common/decorators/endpoint.decorator';
 import { CurrentPrincipal } from '../../../../common/decorators/principal.decorator';
 import { OperationKey } from '../../../../common/decorators/operation-key.decorator';
@@ -11,6 +12,15 @@ import {
   idSchema,
   visitResponseSchema,
 } from '../../visits/dto/visit.dto';
+import {
+  CreatePauseReasonDto,
+  createPauseReasonSchema,
+  pauseReasonResponseSchema,
+  UpdatePauseReasonDto,
+  updatePauseReasonSchema,
+  workdayPauseResponseSchema,
+} from '../../workdays/dto/pause.dto';
+import { pageResultSchema } from '../../../../common/pagination';
 import {
   FieldFilters,
   TeamSchedule,
@@ -148,5 +158,60 @@ export class FieldManagementController {
     @Res() response: JsonResponse,
   ): Promise<void> {
     response.json(await this.management.evidence(principal, id));
+  }
+
+  @Endpoint({
+    method: 'get',
+    path: 'pause-reasons',
+    output: z.array(pauseReasonResponseSchema),
+  })
+  listPauseReasons(@CurrentPrincipal() principal: Principal) {
+    return this.management.listPauseReasons(principal);
+  }
+
+  @Endpoint({
+    method: 'post',
+    path: 'pause-reasons',
+    input: createPauseReasonSchema,
+    output: pauseReasonResponseSchema,
+    operationKey: true,
+  })
+  createPauseReason(
+    @CurrentPrincipal() principal: Principal,
+    @OperationKey() key: string,
+    @Body(new ZodValidationPipe(createPauseReasonSchema))
+    input: CreatePauseReasonDto,
+  ) {
+    return this.management.createPauseReason(principal, key, input);
+  }
+
+  @Endpoint({
+    method: 'post',
+    path: 'pause-reasons/:id',
+    input: updatePauseReasonSchema,
+    output: pauseReasonResponseSchema,
+    operationKey: true,
+  })
+  updatePauseReason(
+    @CurrentPrincipal() principal: Principal,
+    @OperationKey() key: string,
+    @Param('id', new ZodValidationPipe(idSchema)) id: string,
+    @Body(new ZodValidationPipe(updatePauseReasonSchema))
+    input: UpdatePauseReasonDto,
+  ) {
+    return this.management.updatePauseReason(principal, key, id, input);
+  }
+
+  @Endpoint({
+    method: 'get',
+    path: 'workday-pauses',
+    query: fieldFiltersSchema,
+    output: pageResultSchema(workdayPauseResponseSchema),
+  })
+  workdayPauses(
+    @CurrentPrincipal() principal: Principal,
+    @Query(new ZodValidationPipe(fieldFiltersSchema)) filters: FieldFilters,
+  ) {
+    return this.management.workdayPauses(principal, filters);
   }
 }

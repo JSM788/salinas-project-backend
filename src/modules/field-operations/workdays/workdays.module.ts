@@ -8,5 +8,6 @@ import { WorkdaysService } from './services/workdays.service';
   imports: [IdentityModule, FieldCommandsModule],
   controllers: [WorkdaysController],
   providers: [WorkdaysService],
+  exports: [WorkdaysService],
 })
 export class WorkdaysModule {}

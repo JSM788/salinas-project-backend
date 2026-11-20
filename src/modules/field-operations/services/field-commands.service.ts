@@ -14,7 +14,11 @@ type FieldAction =
   | 'cancel_team_visit'
   | 'sync_weekly_routes'
   | 'check_in'
-  | 'close_visit';
+  | 'close_visit'
+  | 'create_pause_reason'
+  | 'update_pause_reason'
+  | 'start_pause'
+  | 'end_pause';
 
 @Injectable()
 export class FieldCommandsService {

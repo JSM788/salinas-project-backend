@@ -15,6 +15,14 @@ import {
   startWorkdaySchema,
   workdayResponseSchema,
 } from '../dto/workday.dto';
+import {
+  EndPauseDto,
+  endPauseSchema,
+  pauseReasonResponseSchema,
+  StartPauseDto,
+  startPauseSchema,
+  workdayPauseResponseSchema,
+} from '../dto/pause.dto';
 import { WorkdaysService } from '../services/workdays.service';
 import { pageResultSchema, PaginationQuery, paginationQuerySchema } from '../../../../common/pagination';
 
@@ -33,6 +41,15 @@ export class WorkdaysController {
     @Res() response: JsonResponse,
   ): Promise<void> {
     response.json(await this.workdays.current(principal));
+  }
+
+  @Endpoint({
+    method: 'get',
+    path: 'workday-policy',
+    output: z.object({ cutoff_hour: z.string(), time_zone: z.string() }),
+  })
+  policy(@CurrentPrincipal() principal: Principal) {
+    return this.workdays.policy(principal);
   }
 
   @Endpoint({
@@ -74,5 +91,56 @@ export class WorkdaysController {
     @Body(new ZodValidationPipe(endWorkdaySchema)) input: EndWorkdayDto,
   ) {
     return this.workdays.end(principal, key, input);
+  }
+
+  @Endpoint({
+    method: 'get',
+    path: 'pause-reasons',
+    output: z.array(pauseReasonResponseSchema),
+  })
+  listPauseReasons(@CurrentPrincipal() principal: Principal) {
+    return this.workdays.listPauseReasons(principal);
+  }
+
+  @Endpoint({
+    method: 'get',
+    path: 'workday/pause',
+    output: workdayPauseResponseSchema.nullable(),
+  })
+  async currentPause(
+    @CurrentPrincipal() principal: Principal,
+    @Res() response: JsonResponse,
+  ): Promise<void> {
+    response.json(await this.workdays.currentPause(principal));
+  }
+
+  @Endpoint({
+    method: 'post',
+    path: 'workdays/pauses/start',
+    input: startPauseSchema,
+    output: workdayPauseResponseSchema,
+    operationKey: true,
+  })
+  startPause(
+    @CurrentPrincipal() principal: Principal,
+    @OperationKey() key: string,
+    @Body(new ZodValidationPipe(startPauseSchema)) input: StartPauseDto,
+  ) {
+    return this.workdays.startPause(principal, key, input);
+  }
+
+  @Endpoint({
+    method: 'post',
+    path: 'workdays/pauses/end',
+    input: endPauseSchema,
+    output: workdayPauseResponseSchema,
+    operationKey: true,
+  })
+  endPause(
+    @CurrentPrincipal() principal: Principal,
+    @OperationKey() key: string,
+    @Body(new ZodValidationPipe(endPauseSchema)) input: EndPauseDto,
+  ) {
+    return this.workdays.endPause(principal, key, input);
   }
 }

@@ -10,6 +10,12 @@ import { FieldCommandsService } from '../../services/field-commands.service';
 import { visitResponse } from '../../visits/dto/visit.dto';
 import { workdayResponse } from '../../workdays/dto/workday.dto';
 import {
+  CreatePauseReasonDto,
+  pauseReasonResponse,
+  UpdatePauseReasonDto,
+  workdayPauseResponse,
+} from '../../workdays/dto/pause.dto';
+import {
   FieldFilters,
   TeamSchedule,
   fieldMemberSchema,
@@ -524,5 +530,130 @@ export class FieldManagementService {
         targetMembershipId: input.membershipId,
       },
     );
+  }
+
+  listPauseReasons(principal: Principal) {
+    return this.read(principal, async (tx) => {
+      const reasons = await tx.pauseReason.findMany({
+        where: { companyId: principal.companyId },
+        orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      });
+      return reasons.map(pauseReasonResponse);
+    });
+  }
+
+  createPauseReason(
+    principal: Principal,
+    key: string,
+    input: CreatePauseReasonDto,
+  ) {
+    return this.commands.execute(
+      principal,
+      key,
+      'create_pause_reason',
+      input,
+      async (tx, context) => {
+        const existing = await tx.pauseReason.findFirst({
+          where: {
+            companyId: principal.companyId,
+            name: { equals: input.name, mode: 'insensitive' },
+          },
+          select: { id: true },
+        });
+        if (existing) rejectField('pause_reason_exists', ['name']);
+
+        const created = await tx.pauseReason.create({
+          data: {
+            companyId: principal.companyId,
+            name: input.name,
+          },
+        });
+        context.recordDetails({ name: created.name });
+        return pauseReasonResponse(created);
+      },
+      { requiredPermission: 'manage_field_operations' },
+    );
+  }
+
+  updatePauseReason(
+    principal: Principal,
+    key: string,
+    id: string,
+    input: UpdatePauseReasonDto,
+  ) {
+    return this.commands.execute(
+      principal,
+      key,
+      'update_pause_reason',
+      [id, input],
+      async (tx, context) => {
+        const current = await tx.pauseReason.findFirst({
+          where: { companyId: principal.companyId, id },
+        });
+        if (!current) reject('pause_reason_not_found');
+
+        if (input.name !== undefined) {
+          const duplicate = await tx.pauseReason.findFirst({
+            where: {
+              companyId: principal.companyId,
+              id: { not: id },
+              name: { equals: input.name, mode: 'insensitive' },
+            },
+            select: { id: true },
+          });
+          if (duplicate) rejectField('pause_reason_exists', ['name']);
+        }
+
+        const updated = await tx.pauseReason.update({
+          where: { id: current.id },
+          data: {
+            ...(input.name !== undefined ? { name: input.name } : {}),
+            ...(input.active !== undefined ? { active: input.active } : {}),
+          },
+        });
+        context.recordDetails({
+          ...(input.name !== undefined ? { name: updated.name } : {}),
+          ...(input.active !== undefined ? { active: updated.active } : {}),
+        });
+        return pauseReasonResponse(updated);
+      },
+      { requiredPermission: 'manage_field_operations' },
+    );
+  }
+
+  workdayPauses(principal: Principal, filters: FieldFilters) {
+    return this.read(principal, async (tx) => {
+      const where: Prisma.WorkdayPauseWhereInput = {
+        companyId: principal.companyId,
+        ...(filters.membershipId ? { membershipId: filters.membershipId } : {}),
+        ...(filters.date
+          ? { workday: { businessDate: databaseDate(filters.date) } }
+          : filters.dateFrom || filters.dateTo
+          ? {
+              workday: {
+                businessDate: {
+                  ...(filters.dateFrom ? { gte: databaseDate(filters.dateFrom) } : {}),
+                  ...(filters.dateTo ? { lte: databaseDate(filters.dateTo) } : {}),
+                },
+              },
+            }
+          : {}),
+      };
+      const total = await tx.workdayPause.count({ where });
+      const rows = await tx.workdayPause.findMany({
+        where,
+        include: {
+          workday: { select: { businessDate: true } },
+        },
+        orderBy: [{ startedAt: 'asc' }, { id: 'asc' }],
+        skip: (filters.page - 1) * filters.pageSize,
+        take: filters.pageSize,
+      });
+      return pageResult(
+        rows.map((row) => workdayPauseResponse(row, row.workday.businessDate)),
+        total,
+        filters,
+      );
+    });
   }
 }

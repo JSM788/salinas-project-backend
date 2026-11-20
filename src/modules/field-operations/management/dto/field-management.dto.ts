@@ -34,7 +34,7 @@ export const syncWeeklyRoutesSchema = z
         z
           .object({
             date: z.iso.date(),
-            customerIds: z.array(z.uuid()).max(6),
+            customerIds: z.array(z.uuid()),
           })
           .strict(),
       )

@@ -122,7 +122,7 @@ test('team duplicate identity is attached to email', async () => {
     operation: { findUnique: async () => null },
     user: { findUnique: async () => ({ id: 'duplicate' }) },
   };
-  const service = new TeamService({ transaction: async (callback: (tx: unknown) => unknown) => callback(tx) } as never, {} as never, {} as never);
+  const service = new TeamService({ transaction: async (callback: (tx: unknown) => unknown) => callback(tx) } as never, {} as never, {} as never, {} as never);
   await expectPath(() => service.editProfile({ companyId: 'company', membershipId: 'manager' } as never, 'key', 'member', { email: 'duplicate@example.test' } as never), ['email']);
 });
 

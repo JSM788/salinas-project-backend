@@ -159,6 +159,8 @@ export class VisitsService {
           reject('visit_scheduled_in_future');
         if (await tx.visit.findFirst({ where: { ...where, status: 'active' } }))
           reject('another_visit_active');
+        if (await tx.workdayPause.findFirst({ where: { ...where, status: 'active' } }))
+          reject('pause_in_progress');
 
         const deviceCoords =
           input.latitude !== undefined && input.longitude !== undefined

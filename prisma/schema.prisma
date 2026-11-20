@@ -25,6 +25,7 @@ model Company {
   platformAuditEntries PlatformAuditEntry[]
   integrations         CompanyIntegration[]
   trackedOrders        TrackedOrder[]
+  pauseReasons         PauseReason[]
 
   @@index([createdAt(sort: Desc), id])
   @@map("companies")
@@ -99,6 +100,7 @@ model Membership {
   operations               Operation[]
   auditEntries             AuditEntry[]
   trackedOrders            TrackedOrder[]
+  workdayPauses            WorkdayPause[]
 
   @@unique([companyId, userId])
   @@unique([companyId, id])
@@ -188,6 +190,7 @@ model Workday {
   endLongitude   Float?     @map("end_longitude")
   membership     Membership @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
   visits         Visit[]
+  pauses         WorkdayPause[]
 
   @@unique([companyId, id])
   @@unique([companyId, membershipId, businessDate])
@@ -416,4 +419,43 @@ model TrackedOrderEvent {
   @@unique([companyId, orderId, externalEventId])
   @@index([orderId, occurredAt(sort: Asc)])
   @@map("tracked_order_events")
+}
+
+model PauseReason {
+  id        String         @id @default(uuid()) @db.Uuid
+  companyId String         @map("company_id") @db.Uuid
+  name      String
+  active    Boolean        @default(true)
+  createdAt DateTime       @default(now()) @map("created_at") @db.Timestamptz(6)
+  company   Company        @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  pauses    WorkdayPause[]
+
+  @@unique([companyId, id])
+  @@unique([companyId, name])
+  @@map("pause_reasons")
+}
+
+model WorkdayPause {
+  id             String       @id @default(uuid()) @db.Uuid
+  companyId      String       @map("company_id") @db.Uuid
+  membershipId   String       @map("membership_id") @db.Uuid
+  workdayId      String       @map("workday_id") @db.Uuid
+  reasonId       String?      @map("reason_id") @db.Uuid
+  reasonName     String       @map("reason_name")
+  notes          String?
+  status         String       @default("active")
+  startedAt      DateTime     @default(now()) @map("started_at") @db.Timestamptz(6)
+  endedAt        DateTime?    @map("ended_at") @db.Timestamptz(6)
+  startLatitude  Float?       @map("start_latitude")
+  startLongitude Float?       @map("start_longitude")
+  endLatitude    Float?       @map("end_latitude")
+  endLongitude   Float?       @map("end_longitude")
+  membership     Membership   @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  workday        Workday      @relation(fields: [companyId, workdayId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  reason         PauseReason? @relation(fields: [companyId, reasonId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@unique([companyId, id])
+  @@unique([companyId, membershipId], where: { status: "active" }, map: "one_active_pause")
+  @@index([companyId, workdayId, startedAt])
+  @@map("workday_pauses")
 }

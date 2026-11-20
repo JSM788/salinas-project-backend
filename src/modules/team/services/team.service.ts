@@ -15,10 +15,16 @@ import { Prisma } from '../../../generated/prisma/client';
 import { InvitationsService } from '../../invitations/invitations.service';
 import { MailService } from '../../mail/mail.service';
 import { storage } from '../../../common/storage.service';
+import { WorkdaysService } from '../../field-operations/workdays/services/workdays.service';
 
 @Injectable()
 export class TeamService {
-  constructor(private readonly prisma: PrismaService, private readonly invitations: InvitationsService, private readonly mail: MailService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly invitations: InvitationsService,
+    private readonly mail: MailService,
+    private readonly workdays: WorkdaysService,
+  ) {}
 
   private async requireManager(tx: Transaction, principal: Principal) {
     const session = await tx.session.findFirst({ where: {
@@ -225,6 +231,10 @@ export class TeamService {
         },
       });
       return response;
+    }).then((res) => {
+      // Re-arm the one-shot cutoff timer so the new hour applies immediately.
+      void this.workdays.scheduleNextAutoClose().catch(() => undefined);
+      return res;
     });
   }
 }

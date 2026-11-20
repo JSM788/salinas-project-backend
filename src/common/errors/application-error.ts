@@ -80,6 +80,14 @@ export const errorMessages = {
   orders_forbidden: 'This membership cannot manage company order tracking.',
   customer_visit_today_conflict:
     'This customer already has a visit scheduled or completed today for your role.',
+  pause_already_active: 'A pause is already active for this workday.',
+  active_pause_required: 'An active pause is required.',
+  pause_reason_not_found:
+    'The selected pause reason was not found or is inactive.',
+  pause_reason_exists: 'A pause reason with this name already exists.',
+  visit_active_pause_blocked:
+    'Close the active visit before starting a pause.',
+  pause_in_progress: 'End the active pause before checking into a visit.',
 } as const;
 
 export type ErrorCode = keyof typeof errorMessages;

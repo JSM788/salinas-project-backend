@@ -73,6 +73,12 @@ const businessStatus: Record<ErrorCode, number> = {
   order_not_found: 404,
   orders_forbidden: 403,
   customer_visit_today_conflict: 409,
+  pause_already_active: 409,
+  active_pause_required: 409,
+  pause_reason_not_found: 404,
+  pause_reason_exists: 409,
+  visit_active_pause_blocked: 409,
+  pause_in_progress: 409,
 };
 
 function postgresCode(error: unknown): string | undefined {
