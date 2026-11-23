@@ -56,9 +56,14 @@ export function resolveOrderStatus(input: {
 
 /**
  * Limpia y normaliza teléfonos a solo dígitos, removiendo cualquier '+' o separador.
+ * En Perú devuelve los 9 dígitos nacionales para coincidir uniformemente.
  */
-export function normalizeInternationalPhone(raw: string): string {
-  return raw.trim().replace(/\D/g, '');
+export function normalizeInternationalPhone(raw?: string | null): string {
+  if (!raw) return '';
+  const digits = raw.trim().replace(/\D/g, '');
+  if (digits.length === 9) return digits;
+  if (digits.length === 11 && digits.startsWith('51')) return digits.slice(2);
+  return digits.length > 9 ? digits.slice(-9) : digits;
 }
 
 export const brangoEvidenceSchema = z

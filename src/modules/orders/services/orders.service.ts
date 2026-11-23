@@ -53,31 +53,38 @@ export class OrdersService {
       let matchedMembership = null;
       const rawPhone = input.commercialPhone?.trim() || '';
       const digitsOnly = rawPhone.replace(/\D/g, '');
+      const nationalNumber =
+        digitsOnly.length >= 9 ? digitsOnly.slice(-9) : digitsOnly;
 
-      if (digitsOnly) {
-        const nationalNumber =
-          digitsOnly.length > 9 ? digitsOnly.slice(-9) : digitsOnly;
+      if (nationalNumber) {
         const candidates = await tx.membership.findMany({
           where: {
             companyId,
             active: true,
             user: {
               OR: [
+                { phone: nationalNumber },
                 { phone: rawPhone },
-                { phone: `+${digitsOnly}` },
                 { phone: digitsOnly },
+                { phone: `+${digitsOnly}` },
+                { phone: `+51${nationalNumber}` },
+                { phone: `51${nationalNumber}` },
                 { phone: { endsWith: nationalNumber } },
               ],
             },
           },
-          take: 2,
           select: {
             id: true,
+            role: true,
             user: { select: { displayName: true, email: true, phone: true } },
           },
         });
-        if (candidates.length === 1) {
-          matchedMembership = candidates[0];
+
+        if (candidates.length > 0) {
+          matchedMembership =
+            candidates.find((c) => c.role === 'commercial') ??
+            candidates.find((c) => c.role === 'merchandiser') ??
+            candidates[0];
         }
       }
 
@@ -124,7 +131,7 @@ export class OrdersService {
         linkStatus,
         linkReason,
         reportedCommercialPhone:
-          digitsOnly || normalizedPhone || input.commercialPhone,
+          nationalNumber || digitsOnly || input.commercialPhone,
         reportedCommercialName:
           input.commercialName?.trim() ||
           matchedMembership?.user.displayName ||
