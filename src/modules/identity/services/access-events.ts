@@ -17,10 +17,12 @@ export function recordAccessEvent(tx: Transaction, event: AccessEventInput) {
   return tx.accessEvent.create({ data: event });
 }
 
-/** User history omits processing steps; all original events remain in the audit store. */
+/** User history omits routine logins and processing steps; all original events remain in the audit store. */
 export const userAccessHistoryFilter = {
   event: {
     notIn: [
+      'login_success',
+      'login_succeeded',
       'invitation_issued',
       'invitation_reissued',
       'invitation_inspected',
