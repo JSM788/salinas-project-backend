@@ -24,6 +24,49 @@ type CustomerWithAssignments = Prisma.CustomerGetPayload<{
   include: typeof includeAssignments;
 }>;
 
+async function resolveCustomerCoords(
+  lat: number | null | undefined,
+  lng: number | null | undefined,
+  address: string,
+): Promise<{ latitude: number | null; longitude: number | null }> {
+  if (lat != null && lng != null) {
+    return { latitude: lat, longitude: lng };
+  }
+  if (!address || !address.trim()) {
+    return { latitude: null, longitude: null };
+  }
+
+  const match3d = address.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+  if (match3d) {
+    return { latitude: parseFloat(match3d[1]), longitude: parseFloat(match3d[2]) };
+  }
+  const matchAt = address.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (matchAt) {
+    return { latitude: parseFloat(matchAt[1]), longitude: parseFloat(matchAt[2]) };
+  }
+  const matchQ = address.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+  if (matchQ) {
+    return { latitude: parseFloat(matchQ[1]), longitude: parseFloat(matchQ[2]) };
+  }
+
+  if (address.startsWith('http://') || address.startsWith('https://')) {
+    try {
+      const res = await fetch(address.trim(), { method: 'HEAD', redirect: 'follow' });
+      const finalUrl = res.url;
+      const m3d = finalUrl.match(/!3d(-?\d+\.\d+)!4d(-?\d+\.\d+)/);
+      if (m3d) return { latitude: parseFloat(m3d[1]), longitude: parseFloat(m3d[2]) };
+      const mAt = finalUrl.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (mAt) return { latitude: parseFloat(mAt[1]), longitude: parseFloat(mAt[2]) };
+      const mQ = finalUrl.match(/[?&]q=(-?\d+\.\d+),(-?\d+\.\d+)/);
+      if (mQ) return { latitude: parseFloat(mQ[1]), longitude: parseFloat(mQ[2]) };
+    } catch {
+      // Ignored
+    }
+  }
+
+  return { latitude: null, longitude: null };
+}
+
 function customerResponse(customer: CustomerWithAssignments) {
   return managedCustomerResponseSchema.parse({
     id: customer.id,
@@ -265,6 +308,11 @@ export class CustomersService {
           .role !== 'merchandiser'
       )
         rejectField('customer_assignee_not_found', ['merchandiserMembershipId']);
+      const coords = await resolveCustomerCoords(
+        input.latitude,
+        input.longitude,
+        input.address,
+      );
       const customer = await tx.customer.create({
         data: {
           companyId: principal.companyId,
@@ -273,8 +321,8 @@ export class CustomersService {
           ruc: input.ruc,
           district: input.district,
           zone: input.zone || null,
-          latitude: input.latitude ?? null,
-          longitude: input.longitude ?? null,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
         },
       });
       if (input.commercialMembershipId) {
@@ -334,6 +382,11 @@ export class CustomersService {
           skipped++;
           continue;
         }
+        const coords = await resolveCustomerCoords(
+          item.latitude,
+          item.longitude,
+          item.address,
+        );
         const customer = await tx.customer.create({
           data: {
             companyId: principal.companyId,
@@ -342,8 +395,8 @@ export class CustomersService {
             ruc: item.ruc,
             district: item.district,
             zone: item.zone || null,
-            latitude: item.latitude ?? null,
-            longitude: item.longitude ?? null,
+            latitude: coords.latitude,
+            longitude: coords.longitude,
           },
         });
         await this.audit(tx, principal, 'customer_created', customer.id);
