@@ -55,16 +55,10 @@ export function resolveOrderStatus(input: {
 }
 
 /**
- * Country-agnostic E.164 normalization:
- * Strips formatting characters and ensures leading '+' when digits include country code.
+ * Limpia y normaliza teléfonos a solo dígitos, removiendo cualquier '+' o separador.
  */
 export function normalizeInternationalPhone(raw: string): string {
-  const cleaned = raw.trim().replace(/[\s().-]/g, '');
-  if (!cleaned) return '';
-  if (cleaned.startsWith('+')) return cleaned;
-  if (cleaned.startsWith('00')) return `+${cleaned.slice(2)}`;
-  if (/^[1-9]\d{7,14}$/.test(cleaned)) return `+${cleaned}`;
-  return cleaned;
+  return raw.trim().replace(/\D/g, '');
 }
 
 export const brangoEvidenceSchema = z

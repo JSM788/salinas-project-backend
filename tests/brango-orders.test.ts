@@ -160,6 +160,22 @@ test('brango webhook authenticates with api key and hmac, matches multi-country 
     assert.equal(ecuBody.linkStatus, 'linked');
     assert.equal(ecuBody.membershipId, commercialEcuador.membershipId);
 
+    // 4b. Match local 9-digit number without country prefix (e.g. "968995490" -> "+51968995490")
+    const okLocal = await sendSignedWebhook({
+      externalOrderId: 'BR-1004',
+      externalEventId: 'EV-4',
+      originCode: 'IN_TRANSIT',
+      commercialPhone: '968995490',
+      customerName: 'Tienda Local',
+    });
+    assert.equal(okLocal.status, 200);
+    const localBody = (await okLocal.json()) as {
+      linkStatus: string;
+      membershipId: string;
+    };
+    assert.equal(localBody.linkStatus, 'linked');
+    assert.equal(localBody.membershipId, commercialPeru.membershipId);
+
     // 5. Unmatched phone goes to pending_link without failing
     const pendingRes = await sendSignedWebhook({
       externalOrderId: 'BR-1003',
@@ -189,8 +205,8 @@ test('brango webhook authenticates with api key and hmac, matches multi-country 
       items: Array<{ externalOrderId: string }>;
     };
     assert.deepEqual(
-      peruOrders.items.map((i) => i.externalOrderId),
-      ['BR-1001'],
+      peruOrders.items.map((i) => i.externalOrderId).sort(),
+      ['BR-1001', 'BR-1004'],
     );
 
     const ecuOrdersRes = await fetch(base + '/v1/field-operations/orders', {
@@ -219,7 +235,7 @@ test('brango webhook authenticates with api key and hmac, matches multi-country 
     const mgrOrders = (await mgrOrdersRes.json()) as {
       kpis: { total: number; pendingLinks: number };
     };
-    assert.equal(mgrOrders.kpis.total, 3);
+    assert.equal(mgrOrders.kpis.total, 4);
     assert.equal(mgrOrders.kpis.pendingLinks, 1);
 
     const linkRes = await fetch(base + `/v1/orders/${pendingBody.id}/link`, {

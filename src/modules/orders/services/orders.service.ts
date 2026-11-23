@@ -50,19 +50,36 @@ export class OrdersService {
     const note = input.note?.trim() || DEFAULT_NOTE_BY_STATUS[status];
 
     return this.prisma.transaction(async (tx) => {
-      const matchedMembership = normalizedPhone
-        ? await tx.membership.findFirst({
-            where: {
-              companyId,
-              active: true,
-              user: { phone: normalizedPhone },
+      let matchedMembership = null;
+      const rawPhone = input.commercialPhone?.trim() || '';
+      const digitsOnly = rawPhone.replace(/\D/g, '');
+
+      if (digitsOnly) {
+        const nationalNumber =
+          digitsOnly.length > 9 ? digitsOnly.slice(-9) : digitsOnly;
+        const candidates = await tx.membership.findMany({
+          where: {
+            companyId,
+            active: true,
+            user: {
+              OR: [
+                { phone: rawPhone },
+                { phone: `+${digitsOnly}` },
+                { phone: digitsOnly },
+                { phone: { endsWith: nationalNumber } },
+              ],
             },
-            select: {
-              id: true,
-              user: { select: { displayName: true, email: true } },
-            },
-          })
-        : null;
+          },
+          take: 2,
+          select: {
+            id: true,
+            user: { select: { displayName: true, email: true, phone: true } },
+          },
+        });
+        if (candidates.length === 1) {
+          matchedMembership = candidates[0];
+        }
+      }
 
       const trimmedRuc = input.customerRuc?.trim() || null;
       const matchedCustomer = trimmedRuc
@@ -106,7 +123,8 @@ export class OrdersService {
         originCode,
         linkStatus,
         linkReason,
-        reportedCommercialPhone: normalizedPhone || input.commercialPhone,
+        reportedCommercialPhone:
+          digitsOnly || normalizedPhone || input.commercialPhone,
         reportedCommercialName:
           input.commercialName?.trim() ||
           matchedMembership?.user.displayName ||
@@ -604,7 +622,11 @@ export class OrdersService {
       membershipId: item.membershipId,
       commercialName,
       commercialPhone:
-        item.membership?.user.phone ?? item.reportedCommercialPhone,
+        (
+          item.membership?.user.phone ??
+          item.reportedCommercialPhone ??
+          ''
+        ).replace(/\D/g, '') || null,
       customerId: item.customerId,
       customerName: item.reportedCustomerName,
       customerRuc: item.reportedCustomerRuc,
