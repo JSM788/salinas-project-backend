@@ -14,14 +14,16 @@ import {
 import { pageResult } from '../../../common/pagination';
 import { businessDate } from '../../../common/business-date';
 
-const includeAssignments = {
+const includeBranchDetails = {
+  customer: true,
   assignments: {
     include: { membership: { include: { user: { select: { email: true, displayName: true } } } } },
     orderBy: { membershipId: 'asc' as const },
   },
 };
-type CustomerWithAssignments = Prisma.CustomerGetPayload<{
-  include: typeof includeAssignments;
+
+type BranchWithDetails = Prisma.CustomerBranchGetPayload<{
+  include: typeof includeBranchDetails;
 }>;
 
 async function resolveCustomerCoords(
@@ -67,19 +69,23 @@ async function resolveCustomerCoords(
   return { latitude: null, longitude: null };
 }
 
-function customerResponse(customer: CustomerWithAssignments) {
+function branchResponse(branch: BranchWithDetails) {
   return managedCustomerResponseSchema.parse({
-    id: customer.id,
-    name: customer.name,
-    address: customer.address,
-    ruc: customer.ruc,
-    district: customer.district,
-    zone: customer.zone,
-    latitude: customer.latitude,
-    longitude: customer.longitude,
+    id: branch.id,
+    customerId: branch.customerId,
+    branchId: branch.id,
+    branchName: branch.name,
+    isDefault: branch.isDefault,
+    name: branch.customer.name,
+    address: branch.address,
+    ruc: branch.customer.ruc,
+    district: branch.district,
+    zone: branch.zone,
+    latitude: branch.latitude,
+    longitude: branch.longitude,
     condition: null,
     lastPurchaseDate: null,
-    assignments: customer.assignments.map((assignment) => ({
+    assignments: branch.assignments.map((assignment) => ({
       membershipId: assignment.membershipId,
       email: assignment.membership.user.email,
       displayName: assignment.membership.user.displayName,
@@ -94,8 +100,8 @@ export class CustomersService {
 
   assigned(principal: Principal, filters: CustomerFilters = customerFiltersSchema.parse({})) {
     return this.prisma.readTransaction(async (tx) => {
-      const baseWhere = this.customerWhere(principal, filters);
-      const where: Prisma.CustomerWhereInput =
+      const baseWhere = this.branchWhere(principal, filters);
+      const where: Prisma.CustomerBranchWhereInput =
         filters.scope === 'company'
           ? baseWhere
           : {
@@ -111,42 +117,48 @@ export class CustomersService {
                 },
               ],
             };
-      const total = await tx.customer.count({ where });
-      const items = await tx.customer.findMany({
+      const total = await tx.customerBranch.count({ where });
+      const items = await tx.customerBranch.findMany({
         where,
-        select: { id: true, name: true, address: true, latitude: true, longitude: true },
+        select: {
+          id: true,
+          customerId: true,
+          name: true,
+          address: true,
+          latitude: true,
+          longitude: true,
+          customer: { select: { name: true } },
+        },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (filters.page - 1) * filters.pageSize,
         take: filters.pageSize,
       });
 
-      if (filters.scope !== 'company' || items.length === 0) {
-        return pageResult(items, total, filters);
-      }
-
+      const branchIds = items.map((c) => c.id);
       const todayKey = businessDate(new Date(), principal.timeZone);
-      const startWindow = new Date(Date.now() - 24 * 60 * 60 * 1000);
-      const endWindow = new Date(Date.now() + 7 * 24 * 60 * 60 * 1000);
-      const customerIds = items.map((c) => c.id);
-
-      const upcomingVisits = await tx.visit.findMany({
-        where: {
-          companyId: principal.companyId,
-          customerId: { in: customerIds },
-          status: { not: 'cancelled' },
-          scheduledAt: { gte: startWindow, lte: endWindow },
-          membership: { role: principal.role },
-        },
-        orderBy: { scheduledAt: 'asc' },
-        select: {
-          customerId: true,
-          status: true,
-          scheduledAt: true,
-          membership: {
-            select: { user: { select: { displayName: true, email: true } } },
-          },
-        },
-      });
+      const lookbackStart = new Date(Date.now() - 48 * 3_600_000);
+      const upcomingVisits =
+        branchIds.length > 0
+          ? await tx.visit.findMany({
+              where: {
+                companyId: principal.companyId,
+                branchId: { in: branchIds },
+                status: { in: ['pending', 'active'] },
+                scheduledAt: { gte: lookbackStart },
+              },
+              select: {
+                branchId: true,
+                status: true,
+                scheduledAt: true,
+                membership: {
+                  select: {
+                    user: { select: { displayName: true, email: true } },
+                  },
+                },
+              },
+              orderBy: { scheduledAt: 'asc' },
+            })
+          : [];
 
       const conflictMap = new Map<
         string,
@@ -156,9 +168,9 @@ export class CustomersService {
         const visitDate = businessDate(v.scheduledAt, principal.timeZone);
         if (visitDate < todayKey) continue;
         const isToday = visitDate === todayKey;
-        const existing = conflictMap.get(v.customerId);
+        const existing = conflictMap.get(v.branchId);
         if (!existing || (!existing.isToday && isToday)) {
-          conflictMap.set(v.customerId, {
+          conflictMap.set(v.branchId, {
             status: v.status,
             scheduledAt: v.scheduledAt.toISOString(),
             memberName:
@@ -169,9 +181,16 @@ export class CustomersService {
       }
 
       return pageResult(
-        items.map((c) => ({
-          ...c,
-          conflictVisit: conflictMap.get(c.id) ?? null,
+        items.map((b) => ({
+          id: b.id,
+          customerId: b.customerId,
+          branchId: b.id,
+          branchName: b.name,
+          name: b.customer.name,
+          address: b.address,
+          latitude: b.latitude,
+          longitude: b.longitude,
+          conflictVisit: conflictMap.get(b.id) ?? null,
         })),
         total,
         filters,
@@ -208,7 +227,7 @@ export class CustomersService {
     if (member.count !== 1 || !session) reject('customer_management_forbidden');
   }
 
-  private customerWhere(principal: Principal, filters: CustomerFilters): Prisma.CustomerWhereInput {
+  private branchWhere(principal: Principal, filters: CustomerFilters): Prisma.CustomerBranchWhereInput {
     const assignment = {
       companyId: principal.companyId,
       ...(filters.membershipId ? { membershipId: filters.membershipId } : {}),
@@ -216,32 +235,74 @@ export class CustomersService {
     };
     return {
       companyId: principal.companyId,
-      ...(filters.search ? { OR: [
-        { name: { contains: filters.search, mode: 'insensitive' } },
-        { ruc: { contains: filters.search } },
-        { address: { contains: filters.search, mode: 'insensitive' } },
-      ] } : {}),
+      active: true,
+      ...(filters.search
+        ? {
+            OR: [
+              { name: { contains: filters.search, mode: 'insensitive' } },
+              { address: { contains: filters.search, mode: 'insensitive' } },
+              { customer: { name: { contains: filters.search, mode: 'insensitive' } } },
+              { customer: { ruc: { contains: filters.search } } },
+            ],
+          }
+        : {}),
       ...(filters.district ? { district: { equals: filters.district, mode: 'insensitive' } } : {}),
       ...(filters.zone ? { zone: { equals: filters.zone, mode: 'insensitive' } } : {}),
-      ...(filters.assignment === 'unassigned' ? { assignments: { none: assignment } }
+      ...(filters.assignment === 'unassigned'
+        ? { assignments: { none: assignment } }
         : filters.assignment === 'assigned' || filters.membershipId || filters.role
-          ? { assignments: { some: assignment } } : {}),
+          ? { assignments: { some: assignment } }
+          : {}),
     };
   }
 
   async list(principal: Principal, filters: CustomerFilters = customerFiltersSchema.parse({})) {
     this.authorize(principal);
     return this.prisma.readTransaction(async (tx) => {
-    const where = this.customerWhere(principal, filters);
-    const total = await tx.customer.count({ where });
-    const customers = await tx.customer.findMany({
-      where,
-      include: includeAssignments,
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      skip: (filters.page - 1) * filters.pageSize,
-      take: filters.pageSize,
+      const where = this.branchWhere(principal, filters);
+      const total = await tx.customerBranch.count({ where });
+      const branches = await tx.customerBranch.findMany({
+        where,
+        include: includeBranchDetails,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (filters.page - 1) * filters.pageSize,
+        take: filters.pageSize,
+      });
+      return pageResult(branches.map(branchResponse), total, filters);
     });
-    return pageResult(customers.map(customerResponse), total, filters);
+  }
+
+  async lookupByRuc(principal: Principal, ruc: string) {
+    this.authorize(principal);
+    return this.prisma.readTransaction(async (tx) => {
+      const customer = await tx.customer.findUnique({
+        where: {
+          companyId_ruc: {
+            companyId: principal.companyId,
+            ruc,
+          },
+        },
+        include: {
+          branches: {
+            where: { active: true },
+            orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+          },
+        },
+      });
+      if (!customer) return null;
+      return {
+        id: customer.id,
+        name: customer.name,
+        ruc: customer.ruc,
+        branches: customer.branches.map((b) => ({
+          id: b.id,
+          name: b.name,
+          address: b.address,
+          district: b.district,
+          zone: b.zone,
+          isDefault: b.isDefault,
+        })),
+      };
     });
   }
 
@@ -252,25 +313,35 @@ export class CustomersService {
         companyId: principal.companyId,
         active: true,
         role: filters.role ?? { in: ['commercial', 'merchandiser'] },
-        ...(filters.search ? { user: { OR: [
-          { email: { contains: filters.search, mode: 'insensitive' } },
-          { displayName: { contains: filters.search, mode: 'insensitive' } },
-        ] } } : {}),
+        ...(filters.search
+          ? {
+              user: {
+                OR: [
+                  { email: { contains: filters.search, mode: 'insensitive' } },
+                  { displayName: { contains: filters.search, mode: 'insensitive' } },
+                ],
+              },
+            }
+          : {}),
       };
-    const total = await tx.membership.count({ where });
-    const members = await tx.membership.findMany({
-      where,
-      include: { user: { select: { email: true, displayName: true } } },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      skip: (filters.page - 1) * filters.pageSize,
-      take: filters.pageSize,
-    });
-    return pageResult(members.map((member) => ({
-      id: member.id,
-      email: member.user.email,
-      displayName: member.user.displayName,
-      role: member.role,
-    })), total, filters);
+      const total = await tx.membership.count({ where });
+      const members = await tx.membership.findMany({
+        where,
+        include: { user: { select: { email: true, displayName: true } } },
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        skip: (filters.page - 1) * filters.pageSize,
+        take: filters.pageSize,
+      });
+      return pageResult(
+        members.map((member) => ({
+          id: member.id,
+          email: member.user.email,
+          displayName: member.user.displayName,
+          role: member.role,
+        })),
+        total,
+        filters,
+      );
     });
   }
 
@@ -308,28 +379,72 @@ export class CustomersService {
           .role !== 'merchandiser'
       )
         rejectField('customer_assignee_not_found', ['merchandiserMembershipId']);
+
       const coords = await resolveCustomerCoords(
         input.latitude,
         input.longitude,
         input.address,
       );
-      const customer = await tx.customer.create({
+
+      // Find or create parent Customer by unique (companyId, ruc)
+      let customer = await tx.customer.findUnique({
+        where: {
+          companyId_ruc: {
+            companyId: principal.companyId,
+            ruc: input.ruc,
+          },
+        },
+        include: { branches: true },
+      });
+
+      let branchName = (input.branchName || '').trim();
+      let isDefault = false;
+
+      if (!customer) {
+        customer = await tx.customer.create({
+          data: {
+            companyId: principal.companyId,
+            name: input.name,
+            ruc: input.ruc,
+          },
+          include: { branches: true },
+        });
+        if (!branchName) branchName = 'Principal';
+        isDefault = true;
+      } else {
+        if (!branchName) {
+          branchName = `Sede ${customer.branches.length + 1}`;
+        }
+        const duplicateBranch = customer.branches.some(
+          (b) =>
+            b.name.trim().toLowerCase() === branchName.toLowerCase() ||
+            b.address.trim().toLowerCase() === input.address.trim().toLowerCase(),
+        );
+        if (duplicateBranch) {
+          rejectField('customer_branch_exists', ['branchName']);
+        }
+      }
+
+      const branch = await tx.customerBranch.create({
         data: {
           companyId: principal.companyId,
-          name: input.name,
+          customerId: customer.id,
+          name: branchName,
           address: input.address,
-          ruc: input.ruc,
           district: input.district,
           zone: input.zone || null,
           latitude: coords.latitude,
           longitude: coords.longitude,
+          isDefault,
         },
       });
+
       if (input.commercialMembershipId) {
         await tx.customerAssignment.create({
           data: {
             companyId: principal.companyId,
             customerId: customer.id,
+            branchId: branch.id,
             membershipId: input.commercialMembershipId,
           },
         });
@@ -339,16 +454,18 @@ export class CustomersService {
           data: {
             companyId: principal.companyId,
             customerId: customer.id,
+            branchId: branch.id,
             membershipId: input.merchandiserMembershipId,
           },
         });
       }
-      await this.audit(tx, principal, 'customer_created', customer.id);
-      const saved = await tx.customer.findUniqueOrThrow({
-        where: { id: customer.id },
-        include: includeAssignments,
+
+      await this.audit(tx, principal, 'customer_created', branch.id);
+      const saved = await tx.customerBranch.findUniqueOrThrow({
+        where: { id: branch.id },
+        include: includeBranchDetails,
       });
-      return customerResponse(saved);
+      return branchResponse(saved);
     });
   }
 
@@ -359,47 +476,79 @@ export class CustomersService {
     this.authorize(principal);
     return this.prisma.transaction(async (tx) => {
       await this.lockManager(tx, principal);
+
+      // Deduplicate within file by (ruc + branchName/address)
       const uniqueItems = new Map<string, ImportCustomersDto['items'][number]>();
       let skipped = 0;
       for (const item of input.items) {
-        if (uniqueItems.has(item.ruc)) {
+        const keyPart = (item.branchName || item.address).trim().toLowerCase();
+        const compositeKey = `${item.ruc}::${keyPart}`;
+        if (uniqueItems.has(compositeKey)) {
           skipped++;
         } else {
-          uniqueItems.set(item.ruc, item);
+          uniqueItems.set(compositeKey, item);
         }
       }
-      const existing = await tx.customer.findMany({
+
+      const rucs = Array.from(new Set(Array.from(uniqueItems.values()).map((i) => i.ruc)));
+      const existingCustomers = await tx.customer.findMany({
         where: {
           companyId: principal.companyId,
-          ruc: { in: Array.from(uniqueItems.keys()) },
+          ruc: { in: rucs },
         },
-        select: { ruc: true },
+        include: { branches: true },
       });
-      const existingRucs = new Set(existing.map((c) => c.ruc).filter(Boolean));
+      const customerByRuc = new Map(existingCustomers.map((c) => [c.ruc!, c]));
+
       let imported = 0;
-      for (const [ruc, item] of uniqueItems.entries()) {
-        if (existingRucs.has(ruc)) {
+      for (const item of uniqueItems.values()) {
+        let customer = customerByRuc.get(item.ruc);
+        if (!customer) {
+          customer = await tx.customer.create({
+            data: {
+              companyId: principal.companyId,
+              name: item.name,
+              ruc: item.ruc,
+            },
+            include: { branches: true },
+          });
+          customerByRuc.set(item.ruc, customer);
+        }
+
+        const branchName = (item.branchName || '').trim() ||
+          (customer.branches.length === 0 ? 'Principal' : `Sede ${customer.branches.length + 1}`);
+
+        const isDuplicateBranch = customer.branches.some(
+          (b) =>
+            b.name.trim().toLowerCase() === branchName.toLowerCase() ||
+            b.address.trim().toLowerCase() === item.address.trim().toLowerCase(),
+        );
+        if (isDuplicateBranch) {
           skipped++;
           continue;
         }
+
         const coords = await resolveCustomerCoords(
           item.latitude,
           item.longitude,
           item.address,
         );
-        const customer = await tx.customer.create({
+
+        const branch = await tx.customerBranch.create({
           data: {
             companyId: principal.companyId,
-            name: item.name,
+            customerId: customer.id,
+            name: branchName,
             address: item.address,
-            ruc: item.ruc,
             district: item.district,
             zone: item.zone || null,
             latitude: coords.latitude,
             longitude: coords.longitude,
+            isDefault: customer.branches.length === 0,
           },
         });
-        await this.audit(tx, principal, 'customer_created', customer.id);
+        customer.branches.push(branch);
+        await this.audit(tx, principal, 'customer_created', branch.id);
         imported++;
       }
       return { imported, skipped };
@@ -414,32 +563,42 @@ export class CustomersService {
     return this.prisma.transaction(async (tx) => {
       await this.lockManager(tx, principal);
       const target = await this.assignee(tx, principal, input.membershipId, 'membershipId');
-      const customers = await tx.customer.updateMany({
+      const branches = await tx.customerBranch.findMany({
+        where: {
+          companyId: principal.companyId,
+          id: { in: input.customerIds },
+        },
+        select: { id: true, customerId: true },
+      });
+      if (branches.length !== input.customerIds.length)
+        rejectField('customer_not_found', ['customerIds']);
+
+      await tx.customerBranch.updateMany({
         where: {
           companyId: principal.companyId,
           id: { in: input.customerIds },
         },
         data: { assignmentVersion: { increment: 1 } },
       });
-      if (customers.count !== input.customerIds.length)
-        rejectField('customer_not_found', ['customerIds']);
+
       await tx.customerAssignment.deleteMany({
         where: {
           companyId: principal.companyId,
-          customerId: { in: input.customerIds },
+          branchId: { in: input.customerIds },
           membership: { role: target.role },
         },
       });
       await tx.customerAssignment.createMany({
-        data: input.customerIds.map((customerId) => ({
+        data: branches.map((b) => ({
           companyId: principal.companyId,
-          customerId,
+          customerId: b.customerId,
+          branchId: b.id,
           membershipId: target.id,
         })),
       });
-      for (const customerId of input.customerIds)
-        await this.audit(tx, principal, 'customer_assigned', customerId);
-      return { updated: customers.count };
+      for (const branchId of input.customerIds)
+        await this.audit(tx, principal, 'customer_assigned', branchId);
+      return { updated: branches.length };
     });
   }
 

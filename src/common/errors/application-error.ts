@@ -80,6 +80,8 @@ export const errorMessages = {
   orders_forbidden: 'This membership cannot manage company order tracking.',
   customer_visit_today_conflict:
     'This customer already has a visit scheduled or completed today for your role.',
+  customer_branch_exists:
+    'A branch with this name already exists for this customer.',
   pause_already_active: 'A pause is already active for this workday.',
   active_pause_required: 'An active pause is required.',
   pause_reason_not_found:

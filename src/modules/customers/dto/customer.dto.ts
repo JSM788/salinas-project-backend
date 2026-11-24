@@ -14,6 +14,7 @@ export type CustomerFilters = z.infer<typeof customerFiltersSchema>;
 export const createCustomerSchema = z
   .object({
     name: z.string().trim().min(1).max(150),
+    branchName: z.string().trim().min(1).max(120).optional(),
     address: z.string().trim().min(1).max(300),
     ruc: z.string().regex(/^[0-9]{11}$/),
     district: z.string().trim().min(1).max(100),
@@ -24,9 +25,11 @@ export const createCustomerSchema = z
     merchandiserMembershipId: z.uuid().optional(),
   })
   .strict();
+
 export const importCustomerItemSchema = z
   .object({
     name: z.string().trim().min(1).max(150),
+    branchName: z.string().trim().min(1).max(120).optional(),
     address: z.string().trim().min(1).max(300),
     ruc: z.string().regex(/^[0-9]{11}$/),
     district: z.string().trim().min(1).max(100),
@@ -35,15 +38,18 @@ export const importCustomerItemSchema = z
     longitude: z.number().min(-180).max(180).nullable().optional(),
   })
   .strict();
+
 export const importCustomersSchema = z
   .object({
     items: z.array(importCustomerItemSchema).min(1).max(500),
   })
   .strict();
+
 export const importCustomersResponseSchema = z.object({
   imported: z.number().int().nonnegative(),
   skipped: z.number().int().nonnegative(),
 });
+
 export const assignCustomersSchema = z
   .object({
     customerIds: z
@@ -57,8 +63,12 @@ export const assignCustomersSchema = z
     membershipId: z.uuid(),
   })
   .strict();
+
 export const customerResponseSchema = z.object({
   id: z.uuid(),
+  customerId: z.uuid(),
+  branchId: z.uuid(),
+  branchName: z.string(),
   name: z.string(),
   address: z.string(),
   latitude: z.number().nullable().optional(),
@@ -73,16 +83,19 @@ export const customerResponseSchema = z.object({
     .nullable()
     .optional(),
 });
+
 export const assigneeResponseSchema = z.object({
   displayName: z.string().nullable().optional(),
   id: z.uuid(),
   email: z.email(),
   role: z.enum(['commercial', 'merchandiser']),
 });
+
 export const managedCustomerResponseSchema = customerResponseSchema.extend({
   ruc: z.string().nullable(),
   district: z.string().nullable(),
   zone: z.string().nullable(),
+  isDefault: z.boolean().optional(),
   latitude: z.number().nullable().optional(),
   longitude: z.number().nullable().optional(),
   condition: z.null(),
@@ -96,6 +109,25 @@ export const managedCustomerResponseSchema = customerResponseSchema.extend({
     }),
   ),
 });
+
+export const customerLookupResponseSchema = z
+  .object({
+    id: z.uuid(),
+    name: z.string(),
+    ruc: z.string().nullable(),
+    branches: z.array(
+      z.object({
+        id: z.uuid(),
+        name: z.string(),
+        address: z.string(),
+        district: z.string().nullable(),
+        zone: z.string().nullable(),
+        isDefault: z.boolean(),
+      }),
+    ),
+  })
+  .nullable();
+
 export type CreateCustomerDto = z.infer<typeof createCustomerSchema>;
 export type ImportCustomersDto = z.infer<typeof importCustomersSchema>;
 export type AssignCustomersDto = z.infer<typeof assignCustomersSchema>;

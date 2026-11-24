@@ -15,12 +15,38 @@ test('customer and agenda pages filter the complete tenant dataset beyond 200 ro
     const worker = await operator.addMember(manager.companyId, 'worker@test.example', 'long-test-password', 'commercial');
     const foreign = await operator.provision('foreign', 'Foreign', 'foreign@test.example', 'long-test-password');
     const data = Array.from({ length: 213 }, (_, index) => ({ companyId: manager.companyId,
-      name: `Customer ${index.toString().padStart(3, '0')}`, address: 'Address', district: index === 212 ? 'Target' : 'Other',
+      name: `Customer ${index.toString().padStart(3, '0')}`,
       createdAt: new Date(1700000000000 + index * 1000) }));
-    await db.prisma.customer.createMany({ data: [...data, { companyId: foreign.companyId, name: 'Customer foreign', address: 'Address', district: 'Target' }] });
+    await db.prisma.customer.createMany({ data: [...data, { companyId: foreign.companyId, name: 'Customer foreign' }] });
     const customers = await db.prisma.customer.findMany({ where: { companyId: manager.companyId }, orderBy: { name: 'asc' } });
-    await db.prisma.customerAssignment.createMany({ data: customers.map((customer) => ({ companyId: manager.companyId, customerId: customer.id, membershipId: worker.membershipId })) });
-    await db.prisma.visit.createMany({ data: customers.map((customer, index) => ({ companyId: manager.companyId, customerId: customer.id,
+    const foreignCustomer = await db.prisma.customer.findFirstOrThrow({ where: { companyId: foreign.companyId } });
+    await db.prisma.customerBranch.createMany({
+      data: [
+        ...customers.map((customer, index) => ({
+          companyId: manager.companyId,
+          customerId: customer.id,
+          name: 'Principal',
+          address: 'Address',
+          district: index === 212 ? 'Target' : 'Other',
+          isDefault: true,
+        })),
+        {
+          companyId: foreign.companyId,
+          customerId: foreignCustomer.id,
+          name: 'Principal',
+          address: 'Address',
+          district: 'Target',
+          isDefault: true,
+        },
+      ],
+    });
+    const branches = await db.prisma.customerBranch.findMany({
+      where: { companyId: manager.companyId },
+      include: { customer: true },
+      orderBy: { customer: { name: 'asc' } },
+    });
+    await db.prisma.customerAssignment.createMany({ data: branches.map((b) => ({ companyId: manager.companyId, customerId: b.customerId, branchId: b.id, membershipId: worker.membershipId })) });
+    await db.prisma.visit.createMany({ data: branches.map((b, index) => ({ companyId: manager.companyId, customerId: b.customerId, branchId: b.id,
       membershipId: worker.membershipId, plannedRole: 'commercial', scheduledAt: new Date(1700000000000 + index * 60000) })) });
     app = await createApp(db.prisma, false, [], [{ host: 'paging.example', company: 'paging' }]);
     await app.listen(0, '127.0.0.1');

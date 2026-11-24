@@ -27,16 +27,18 @@ export class AgendaService {
       orderBy: [{ scheduledAt: 'asc' }, { id: 'asc' }],
       skip: (filters.page - 1) * filters.pageSize,
       take: filters.pageSize,
-      include: { customer: true, evidence: { select: { visitId: true } } },
+      include: { customer: true, branch: true, evidence: { select: { visitId: true } } },
     });
     return pageResult(visits.map((visit) => ({
       ...visitResponse(visit),
+      branch_id: visit.branchId,
+      branch_name: visit.branch.name,
       customer_name: visit.customer.name,
-      customer_address: visit.customer.address,
+      customer_address: visit.branch.address,
       customer_ruc: visit.customer.ruc,
-      customer_district: visit.customer.district,
-      customer_latitude: visit.customer.latitude,
-      customer_longitude: visit.customer.longitude,
+      customer_district: visit.branch.district,
+      customer_latitude: visit.branch.latitude,
+      customer_longitude: visit.branch.longitude,
       has_evidence: visit.evidence.length > 0,
     })), total, filters);
     });

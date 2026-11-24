@@ -118,25 +118,36 @@ export class FieldManagementService {
   customers(principal: Principal, membershipId: string, filters: FieldFilters) {
     return this.read(principal, async (tx) => {
       await this.target(tx, principal, membershipId);
-      const where: Prisma.CustomerWhereInput = {
+      const where: Prisma.CustomerBranchWhereInput = {
           companyId: principal.companyId,
+          active: true,
           assignments: {
             some: { companyId: principal.companyId, membershipId },
           },
           ...(filters.search ? { OR: [
             { name: { contains: filters.search, mode: 'insensitive' } },
-            { ruc: { contains: filters.search } },
+            { customer: { name: { contains: filters.search, mode: 'insensitive' } } },
+            { customer: { ruc: { contains: filters.search } } },
           ] } : {}),
         };
-      const total = await tx.customer.count({ where });
-      const customers = await tx.customer.findMany({
+      const total = await tx.customerBranch.count({ where });
+      const branches = await tx.customerBranch.findMany({
         where,
-        select: { id: true, name: true, address: true },
+        select: { id: true, name: true, address: true, customer: { select: { name: true } } },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (filters.page - 1) * filters.pageSize,
         take: filters.pageSize,
       });
-      return pageResult(customers, total, filters);
+      return pageResult(
+        branches.map((b) => ({
+          id: b.id,
+          name: b.customer.name,
+          branchName: b.name,
+          address: b.address,
+        })),
+        total,
+        filters,
+      );
     });
   }
 
@@ -177,6 +188,7 @@ export class FieldManagementService {
         where,
         include: {
           customer: true,
+          branch: true,
           evidence: { select: { visitId: true } },
           membership: { include: { user: { select: { email: true } } } },
         },
@@ -186,12 +198,14 @@ export class FieldManagementService {
       });
       return pageResult(visits.map((visit) => ({
         ...visitResponse(visit),
+        branch_id: visit.branchId,
+        branch_name: visit.branch.name,
         customer_name: visit.customer.name,
-        customer_address: visit.customer.address,
+        customer_address: visit.branch.address,
         customer_ruc: visit.customer.ruc,
-        customer_district: visit.customer.district,
-        customer_latitude: visit.customer.latitude,
-        customer_longitude: visit.customer.longitude,
+        customer_district: visit.branch.district,
+        customer_latitude: visit.branch.latitude,
+        customer_longitude: visit.branch.longitude,
         has_evidence: visit.evidence.length > 0,
         member_email: visit.membership.user.email,
         member_role: visit.executionRole ?? visit.plannedRole,
@@ -268,11 +282,23 @@ export class FieldManagementService {
           companyId: principal.companyId,
           membershipId: input.membershipId,
         };
+        let branch = await tx.customerBranch.findFirst({
+          where: { id: input.customerId, companyId: principal.companyId },
+          select: { id: true, customerId: true },
+        });
+        if (!branch) {
+          branch = await tx.customerBranch.findFirst({
+            where: { customerId: input.customerId, companyId: principal.companyId },
+            orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+            select: { id: true, customerId: true },
+          });
+        }
+        if (!branch) rejectField('customer_not_found', ['customerId']);
         const assigned = await tx.customerAssignment.findUnique({
           where: {
-            companyId_customerId_membershipId: {
+            companyId_branchId_membershipId: {
               ...where,
-              customerId: input.customerId,
+              branchId: branch.id,
             },
           },
         });
@@ -294,7 +320,13 @@ export class FieldManagementService {
           rejectField('visit_slot_taken', ['scheduledAt']);
         return visitResponse(
           await tx.visit.create({
-            data: { ...where, customerId: input.customerId, scheduledAt, plannedRole: member.role },
+            data: {
+              ...where,
+              customerId: branch.customerId,
+              branchId: branch.id,
+              scheduledAt,
+              plannedRole: member.role,
+            },
           }),
         );
       },
@@ -336,7 +368,7 @@ export class FieldManagementService {
       const scheduledAt = new Date(input.scheduledAt);
       await this.assertPlanningOpen(tx, principal, membershipId, scheduledAt, 'scheduledAt');
       if (!await tx.customerAssignment.findUnique({ where: {
-        companyId_customerId_membershipId: { companyId: principal.companyId, customerId: visit.customerId, membershipId },
+        companyId_branchId_membershipId: { companyId: principal.companyId, branchId: visit.branchId, membershipId },
       } })) reject('customer_not_assigned');
       if (await tx.visit.findFirst({ where: {
         companyId: principal.companyId, membershipId, scheduledAt,
@@ -449,11 +481,24 @@ export class FieldManagementService {
         }
 
         for (const { date, customerIds } of insertingByWeek.values()) {
+          const resolvedBranches = await tx.customerBranch.findMany({
+            where: {
+              companyId: principal.companyId,
+              OR: [
+                { id: { in: customerIds } },
+                { customerId: { in: customerIds }, isDefault: true },
+              ],
+            },
+            select: { id: true },
+          });
+          const branchIdsToCheck = Array.from(
+            new Set([...customerIds, ...resolvedBranches.map((b) => b.id)]),
+          );
           const existingInWeek = await tx.visit.findFirst({
             where: {
               companyId: principal.companyId,
               membershipId: input.membershipId,
-              customerId: { in: customerIds },
+              branchId: { in: branchIdsToCheck },
               status: { not: 'cancelled' },
               scheduledAt: businessWeekWindow(date, principal.timeZone),
             },
@@ -467,18 +512,24 @@ export class FieldManagementService {
 
         for (const day of unlockedDays) {
           for (let index = 0; index < day.customerIds.length; index++) {
-            const customerId = day.customerIds[index];
-            if (day.nonPendingIds.has(customerId)) continue;
-            const customer = await tx.customer.findFirst({
-              where: { id: customerId, companyId: principal.companyId },
+            const branchOrCustomerId = day.customerIds[index];
+            if (day.nonPendingIds.has(branchOrCustomerId)) continue;
+            let branch = await tx.customerBranch.findFirst({
+              where: { id: branchOrCustomerId, companyId: principal.companyId },
             });
-            if (!customer) continue;
+            if (!branch) {
+              branch = await tx.customerBranch.findFirst({
+                where: { customerId: branchOrCustomerId, companyId: principal.companyId },
+                orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+              });
+            }
+            if (!branch) continue;
 
             const assignment = await tx.customerAssignment.findUnique({
               where: {
-                companyId_customerId_membershipId: {
+                companyId_branchId_membershipId: {
                   companyId: principal.companyId,
-                  customerId,
+                  branchId: branch.id,
                   membershipId: input.membershipId,
                 },
               },
@@ -487,7 +538,8 @@ export class FieldManagementService {
               await tx.customerAssignment.create({
                 data: {
                   companyId: principal.companyId,
-                  customerId,
+                  customerId: branch.customerId,
+                  branchId: branch.id,
                   membershipId: input.membershipId,
                 },
               });
@@ -507,7 +559,8 @@ export class FieldManagementService {
               data: {
                 companyId: principal.companyId,
                 membershipId: input.membershipId,
-                customerId,
+                customerId: branch.customerId,
+                branchId: branch.id,
                 scheduledAt,
                 stopOrder: index + 1,
                 plannedRole: member.role,

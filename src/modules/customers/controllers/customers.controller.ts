@@ -16,6 +16,7 @@ import {
   importCustomersResponseSchema,
   importCustomersSchema,
   managedCustomerResponseSchema,
+  customerLookupResponseSchema,
   CustomerFilters,
   customerFiltersSchema,
 } from '../dto/customer.dto';
@@ -58,6 +59,20 @@ export class CustomersController {
   assignees(@CurrentPrincipal() principal: Principal,
     @Query(new ZodValidationPipe(customerFiltersSchema)) filters: CustomerFilters) {
     return this.customers.assignees(principal, filters);
+  }
+
+  @Endpoint({
+    method: 'get',
+    path: 'customers/lookup',
+    query: z.object({ ruc: z.string().regex(/^[0-9]{11}$/) }).strict(),
+    output: customerLookupResponseSchema,
+  })
+  lookupByRuc(
+    @CurrentPrincipal() principal: Principal,
+    @Query(new ZodValidationPipe(z.object({ ruc: z.string().regex(/^[0-9]{11}$/) }).strict()))
+    query: { ruc: string },
+  ) {
+    return this.customers.lookupByRuc(principal, query.ruc);
   }
 
   @Endpoint({

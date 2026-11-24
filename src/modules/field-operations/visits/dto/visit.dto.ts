@@ -118,6 +118,8 @@ export const visitResponseSchema = z.object({
 });
 export const agendaResponseSchema = z.array(
   visitResponseSchema.extend({
+    branch_id: z.uuid().optional(),
+    branch_name: z.string().optional(),
     customer_name: z.string(),
     customer_address: z.string(),
     customer_ruc: z.string().nullable().optional(),
@@ -136,6 +138,7 @@ export function visitResponse(visit: Visit) {
     company_id: visit.companyId,
     membership_id: visit.membershipId,
     customer_id: visit.customerId,
+    branch_id: visit.branchId,
     scheduled_at: visit.scheduledAt.toISOString(),
     workday_id: visit.workdayId,
     status: visit.status,

@@ -156,13 +156,22 @@ export class OperatorService {
         data: {
           companyId: input.companyId,
           name: input.customerName,
+        },
+      });
+      const branch = await tx.customerBranch.create({
+        data: {
+          companyId: input.companyId,
+          customerId: customer.id,
+          name: 'Principal',
           address: input.customerAddress,
+          isDefault: true,
         },
       });
       await tx.customerAssignment.create({
         data: {
           companyId: input.companyId,
           customerId: customer.id,
+          branchId: branch.id,
           membershipId: input.membershipId,
         },
       });
@@ -171,10 +180,11 @@ export class OperatorService {
           companyId: input.companyId,
           membershipId: input.membershipId,
           customerId: customer.id,
+          branchId: branch.id,
           scheduledAt: new Date(input.scheduledAt),
         },
       });
-      return { customerId: customer.id, visitId: visit.id };
+      return { customerId: branch.id, visitId: visit.id };
     });
   }
 }

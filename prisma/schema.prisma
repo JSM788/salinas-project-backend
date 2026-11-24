@@ -21,6 +21,7 @@ model Company {
   suspendedAt          DateTime?            @map("suspended_at") @db.Timestamptz(6)
   memberships          Membership[]
   customers            Customer[]
+  customerBranches     CustomerBranch[]
   domains              CompanyDomain[]
   platformAuditEntries PlatformAuditEntry[]
   integrations         CompanyIntegration[]
@@ -145,14 +146,10 @@ model Customer {
   companyId         String               @map("company_id") @db.Uuid
   createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
   name              String
-  address           String
   ruc               String?
-  district          String?
-  zone              String?
-  latitude          Float?
-  longitude         Float?
   assignmentVersion Int                  @default(0) @map("assignment_version")
   company           Company              @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  branches          CustomerBranch[]
   assignments       CustomerAssignment[]
   visits            Visit[]
   trackedOrders     TrackedOrder[]
@@ -163,15 +160,44 @@ model Customer {
   @@map("customers")
 }
 
-model CustomerAssignment {
-  companyId    String     @map("company_id") @db.Uuid
-  customerId   String     @map("customer_id") @db.Uuid
-  membershipId String     @map("membership_id") @db.Uuid
-  customer     Customer   @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
-  membership   Membership @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+model CustomerBranch {
+  id                String               @id @default(uuid()) @db.Uuid
+  companyId         String               @map("company_id") @db.Uuid
+  customerId        String               @map("customer_id") @db.Uuid
+  createdAt         DateTime             @default(now()) @map("created_at") @db.Timestamptz(6)
+  name              String               @default("Principal")
+  address           String
+  district          String?
+  zone              String?
+  latitude          Float?
+  longitude         Float?
+  isDefault         Boolean              @default(false) @map("is_default")
+  active            Boolean              @default(true)
+  assignmentVersion Int                  @default(0) @map("assignment_version")
+  company           Company              @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
+  customer          Customer             @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  assignments       CustomerAssignment[]
+  visits            Visit[]
+  trackedOrders     TrackedOrder[]
 
-  @@id([companyId, customerId, membershipId])
+  @@unique([companyId, id])
+  @@unique([companyId, customerId, name], map: "customer_branches_unique_name")
+  @@index([companyId, customerId])
+  @@map("customer_branches")
+}
+
+model CustomerAssignment {
+  companyId    String         @map("company_id") @db.Uuid
+  customerId   String         @map("customer_id") @db.Uuid
+  branchId     String         @map("branch_id") @db.Uuid
+  membershipId String         @map("membership_id") @db.Uuid
+  customer     Customer       @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  branch       CustomerBranch @relation(fields: [companyId, branchId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  membership   Membership     @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+
+  @@id([companyId, branchId, membershipId])
   @@index([companyId, membershipId], map: "customers_owner")
+  @@index([companyId, customerId])
   @@map("customer_assignments")
 }
 
@@ -209,6 +235,7 @@ model Visit {
   companyId          String          @map("company_id") @db.Uuid
   membershipId       String          @map("membership_id") @db.Uuid
   customerId         String          @map("customer_id") @db.Uuid
+  branchId           String          @map("branch_id") @db.Uuid
   scheduledAt        DateTime        @map("scheduled_at") @db.Timestamptz(6)
   workdayId          String?         @map("workday_id") @db.Uuid
   status             String          @default("pending")
@@ -221,6 +248,7 @@ model Visit {
   audit              Json?
   membership         Membership      @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
   customer           Customer        @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  branch             CustomerBranch  @relation(fields: [companyId, branchId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
   workday            Workday?        @relation(fields: [companyId, workdayId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
   evidence           VisitEvidence[]
 
@@ -371,6 +399,7 @@ model TrackedOrder {
   origin                  String              @default("brango")
   membershipId            String?             @map("membership_id") @db.Uuid
   customerId              String?             @map("customer_id") @db.Uuid
+  branchId                String?             @map("branch_id") @db.Uuid
   status                  String
   originCode              String              @map("origin_code")
   linkStatus              String              @default("pending_link") @map("link_status")
@@ -394,6 +423,7 @@ model TrackedOrder {
   company                 Company             @relation(fields: [companyId], references: [id], onDelete: NoAction, onUpdate: NoAction)
   membership              Membership?         @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
   customer                Customer?           @relation(fields: [companyId, customerId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
+  branch                  CustomerBranch?     @relation(fields: [companyId, branchId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
   events                  TrackedOrderEvent[]
 
   @@unique([companyId, externalOrderId])

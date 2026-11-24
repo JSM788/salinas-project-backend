@@ -44,18 +44,25 @@ export class VisitsService {
           companyId: principal.companyId,
           membershipId: principal.membershipId,
         };
-        if (isExtraordinary) {
-          const customer = await tx.customer.findFirst({
-            where: { id: input.customerId, companyId: principal.companyId },
-            select: { id: true },
+        let branch = await tx.customerBranch.findFirst({
+          where: { id: input.customerId, companyId: principal.companyId },
+          select: { id: true, customerId: true },
+        });
+        if (!branch) {
+          branch = await tx.customerBranch.findFirst({
+            where: { customerId: input.customerId, companyId: principal.companyId },
+            orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+            select: { id: true, customerId: true },
           });
-          if (!customer) reject('customer_not_found');
-        } else {
+        }
+        if (!branch) reject('customer_not_found');
+
+        if (!isExtraordinary) {
           const assigned = await tx.customerAssignment.findUnique({
             where: {
-              companyId_customerId_membershipId: {
+              companyId_branchId_membershipId: {
                 ...where,
-                customerId: input.customerId,
+                branchId: branch.id,
               },
             },
           });
@@ -69,7 +76,7 @@ export class VisitsService {
           const sameDayVisit = await tx.visit.findFirst({
             where: {
               companyId: principal.companyId,
-              customerId: input.customerId,
+              branchId: branch.id,
               status: { not: 'cancelled' },
               scheduledAt: businessDateWindow(dateStr, principal.timeZone),
               membership: { role: principal.role },
@@ -102,7 +109,8 @@ export class VisitsService {
         const created = await tx.visit.create({
           data: {
             ...where,
-            customerId: input.customerId,
+            customerId: branch.customerId,
+            branchId: branch.id,
             scheduledAt,
             plannedRole: principal.role,
             workdayId: activeWorkday?.id ?? null,
@@ -129,7 +137,7 @@ export class VisitsService {
         const visit = await tx.visit.findFirst({
           where: { ...where, id },
           include: {
-            customer: { select: { latitude: true, longitude: true } },
+            branch: { select: { latitude: true, longitude: true } },
           },
         });
         if (!visit) reject('visit_not_found');
@@ -167,10 +175,10 @@ export class VisitsService {
             ? { latitude: input.latitude, longitude: input.longitude }
             : null;
         const customerCoords =
-          visit.customer.latitude !== null && visit.customer.longitude !== null
+          visit.branch.latitude !== null && visit.branch.longitude !== null
             ? {
-                latitude: visit.customer.latitude,
-                longitude: visit.customer.longitude,
+                latitude: visit.branch.latitude,
+                longitude: visit.branch.longitude,
               }
             : null;
         const geofence = evaluateCheckInGeofence(deviceCoords, customerCoords);
@@ -218,7 +226,7 @@ export class VisitsService {
         };
         const visit = await tx.visit.findFirst({
           where: { ...where, id },
-          include: { customer: true },
+          include: { customer: true, branch: true },
         });
         if (!visit) reject('visit_not_found');
         if (
@@ -248,8 +256,8 @@ export class VisitsService {
           // Marca de agua incrustada directamente en los píxeles de la foto
           const coords = visit.checkInLatitude && visit.checkInLongitude
             ? `${visit.checkInLatitude.toFixed(5)}, ${visit.checkInLongitude.toFixed(5)}`
-            : visit.customer?.latitude && visit.customer?.longitude
-              ? `${visit.customer.latitude.toFixed(5)}, ${visit.customer.longitude.toFixed(5)}`
+            : visit.branch?.latitude && visit.branch?.longitude
+              ? `${visit.branch.latitude.toFixed(5)}, ${visit.branch.longitude.toFixed(5)}`
               : null;
 
           const watermarkedBase64 = await watermarkService.applyWatermark(
@@ -259,7 +267,7 @@ export class VisitsService {
               timestamp: new Date().toISOString().replace('T', ' ').slice(0, 16),
               coordinates: coords,
               customerName: visit.customer?.name || 'Cliente Salinas',
-              district: visit.customer?.district,
+              district: visit.branch?.district,
               advisor: principal.email,
             },
           );

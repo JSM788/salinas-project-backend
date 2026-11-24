@@ -154,13 +154,22 @@ test("owner edits member details without replacing identity, credentials or hist
       data: {
         companyId: owner.companyId,
         name: "Assigned",
+      },
+    });
+    const branch = await db.prisma.customerBranch.create({
+      data: {
+        companyId: owner.companyId,
+        customerId: customer.id,
+        name: "Principal",
         address: "Address",
+        isDefault: true,
       },
     });
     await db.prisma.customerAssignment.create({
       data: {
         companyId: owner.companyId,
         customerId: customer.id,
+        branchId: branch.id,
         membershipId: worker.membershipId,
       },
     });

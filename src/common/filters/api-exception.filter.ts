@@ -73,6 +73,7 @@ const businessStatus: Record<ErrorCode, number> = {
   order_not_found: 404,
   orders_forbidden: 403,
   customer_visit_today_conflict: 409,
+  customer_branch_exists: 409,
   pause_already_active: 409,
   active_pause_required: 409,
   pause_reason_not_found: 404,

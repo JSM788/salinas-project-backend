@@ -17,10 +17,13 @@ test('planning versions, frozen workdays and historical roles hold through publi
     const raceMember = await operator.addMember(manager.companyId, 'race@test.example', 'long-test-password', 'commercial');
     const foreign = await operator.provision('foreign', 'Foreign', 'foreign@test.example', 'long-test-password');
     const customer = await db.prisma.customer.create({ data: {
-      companyId: manager.companyId, name: 'Planning customer', address: 'Address',
+      companyId: manager.companyId, name: 'Planning customer',
+    } });
+    const branch = await db.prisma.customerBranch.create({ data: {
+      companyId: manager.companyId, customerId: customer.id, name: 'Principal', address: 'Address', isDefault: true,
     } });
     await db.prisma.customerAssignment.createMany({ data: [commercial, raceMember].map((member) => ({
-      companyId: manager.companyId, customerId: customer.id, membershipId: member.membershipId,
+      companyId: manager.companyId, customerId: customer.id, branchId: branch.id, membershipId: member.membershipId,
     })) });
     app = await createApp(db.prisma, false, [], [{ host: 'production.example', company: 'production' }, { host: 'foreign.example', company: 'foreign' }]);
     await app.listen(0, '127.0.0.1');
@@ -102,7 +105,7 @@ test('planning versions, frozen workdays and historical roles hold through publi
     const dayHistory = await call(managerToken, '/field-operations/workdays?role=commercial');
     assert.equal(dayHistory.body.items.find((day: any) => day.id === started.body.id).member_role, 'commercial');
     const unknown = await db.prisma.visit.create({ data: { companyId: manager.companyId, membershipId: commercial.membershipId,
-      customerId: customer.id, scheduledAt: new Date(Date.now() + 3 * 86400000) } });
+      customerId: customer.id, branchId: branch.id, scheduledAt: new Date(Date.now() + 3 * 86400000) } });
     const legacy = await call(managerToken, '/field-operations/agenda');
     assert.equal(legacy.body.items.find((visit: any) => visit.id === unknown.id).member_role, null);
 

@@ -92,9 +92,16 @@ export class OrdersService {
       const matchedCustomer = trimmedRuc
         ? await tx.customer.findFirst({
             where: { companyId, ruc: trimmedRuc },
-            select: { id: true, name: true, address: true, district: true },
+            include: {
+              branches: {
+                where: { active: true },
+                orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+                take: 1,
+              },
+            },
           })
         : null;
+      const matchedBranch = matchedCustomer?.branches[0] ?? null;
 
       const existing = await tx.trackedOrder.findUnique({
         where: {
@@ -107,6 +114,7 @@ export class OrdersService {
           id: true,
           membershipId: true,
           customerId: true,
+          branchId: true,
           linkStatus: true,
           evidence: true,
         },
@@ -116,6 +124,8 @@ export class OrdersService {
         existing?.membershipId ?? matchedMembership?.id ?? null;
       const resolvedCustomerId =
         existing?.customerId ?? matchedCustomer?.id ?? null;
+      const resolvedBranchId =
+        existing?.branchId ?? matchedBranch?.id ?? null;
       const linkStatus = resolvedMembershipId ? 'linked' : 'pending_link';
       const linkReason = resolvedMembershipId
         ? null
@@ -126,6 +136,7 @@ export class OrdersService {
       const orderData = {
         membershipId: resolvedMembershipId,
         customerId: resolvedCustomerId,
+        branchId: resolvedBranchId,
         status,
         originCode,
         linkStatus,
@@ -141,8 +152,8 @@ export class OrdersService {
           matchedCustomer?.name ?? input.customerName.trim(),
         reportedCustomerRuc: trimmedRuc,
         customerAddress:
-          input.customerAddress?.trim() ?? matchedCustomer?.address ?? null,
-        district: input.district?.trim() ?? matchedCustomer?.district ?? null,
+          input.customerAddress?.trim() ?? matchedBranch?.address ?? null,
+        district: input.district?.trim() ?? matchedBranch?.district ?? null,
         carrierName: input.carrierName?.trim() ?? null,
         carrierPhone: input.carrierPhone?.trim() ?? null,
         packagesCount: input.packagesCount ?? null,
@@ -337,21 +348,34 @@ export class OrdersService {
       let customerName = order.reportedCustomerName;
       let customerAddress = order.customerAddress;
       let district = order.district;
+      let resolvedCustomerId = order.customerId;
+      let resolvedBranchId = order.branchId;
       if (input.customerId) {
-        const customer = await tx.customer.findFirst({
+        let branch = await tx.customerBranch.findFirst({
           where: { id: input.customerId, companyId: principal.companyId },
+          include: { customer: true },
         });
-        if (!customer) reject('customer_not_found');
-        customerName = customer.name;
-        customerAddress = customer.address;
-        district = customer.district;
+        if (!branch) {
+          branch = await tx.customerBranch.findFirst({
+            where: { customerId: input.customerId, companyId: principal.companyId },
+            orderBy: [{ isDefault: 'desc' }, { createdAt: 'asc' }],
+            include: { customer: true },
+          });
+        }
+        if (!branch) reject('customer_not_found');
+        resolvedCustomerId = branch.customerId;
+        resolvedBranchId = branch.id;
+        customerName = branch.customer.name;
+        customerAddress = branch.address;
+        district = branch.district;
       }
 
       const updated = await tx.trackedOrder.update({
         where: { id: order.id },
         data: {
           membershipId: member.id,
-          customerId: input.customerId ?? order.customerId,
+          customerId: resolvedCustomerId,
+          branchId: resolvedBranchId,
           reportedCommercialName:
             member.user.displayName || member.user.email,
           reportedCustomerName: customerName,
@@ -376,9 +400,17 @@ export class OrdersService {
 
   async listFieldOrders(principal: Principal, query: OrdersListQuery) {
     return this.prisma.readTransaction(async (tx) => {
+      const dateRange = query.date
+        ? {
+            gte: new Date(`${query.date}T00:00:00.000Z`),
+            lte: new Date(`${query.date}T23:59:59.999Z`),
+          }
+        : undefined;
+
       const baseWhere: Prisma.TrackedOrderWhereInput = {
         companyId: principal.companyId,
         membershipId: principal.membershipId,
+        ...(dateRange ? { lastEventAt: dateRange } : {}),
         ...(query.search
           ? {
               OR: [

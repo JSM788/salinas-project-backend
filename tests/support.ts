@@ -199,16 +199,20 @@ export async function assignVisit(
   at = new Date().toISOString(),
 ) {
   const [customer] = await db.query(
-    'INSERT INTO customers(id,company_id,name,address) VALUES($1,$2,$3,$4) RETURNING *',
-    [randomUUID(), owner.companyId, 'Pet Market', 'Main street'],
+    'INSERT INTO customers(id,company_id,name) VALUES($1,$2,$3) RETURNING *',
+    [randomUUID(), owner.companyId, 'Pet Market'],
+  );
+  const [branch] = await db.query(
+    'INSERT INTO customer_branches(id,company_id,customer_id,name,address,is_default) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
+    [randomUUID(), owner.companyId, customer.id, 'Principal', 'Main street', true],
   );
   await db.query(
-    'INSERT INTO customer_assignments(company_id,customer_id,membership_id) VALUES($1,$2,$3)',
-    [owner.companyId, customer.id, owner.membershipId],
+    'INSERT INTO customer_assignments(company_id,customer_id,branch_id,membership_id) VALUES($1,$2,$3,$4)',
+    [owner.companyId, customer.id, branch.id, owner.membershipId],
   );
   const [visit] = await db.query(
-    'INSERT INTO visits(id,company_id,membership_id,customer_id,scheduled_at) VALUES($1,$2,$3,$4,$5) RETURNING *',
-    [randomUUID(), owner.companyId, owner.membershipId, customer.id, at],
+    'INSERT INTO visits(id,company_id,membership_id,customer_id,branch_id,scheduled_at) VALUES($1,$2,$3,$4,$5,$6) RETURNING *',
+    [randomUUID(), owner.companyId, owner.membershipId, customer.id, branch.id, at],
   );
-  return { customer, visit };
+  return { customer: { ...customer, id: branch.id, customerId: customer.id }, visit };
 }

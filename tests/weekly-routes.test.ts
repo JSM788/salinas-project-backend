@@ -30,22 +30,39 @@ test('weekly routes sync blocks repeating a customer within the same week', asyn
       data: {
         companyId: manager.companyId,
         name: 'Cliente A',
+      },
+    });
+    const branchA = await db.prisma.customerBranch.create({
+      data: {
+        companyId: manager.companyId,
+        customerId: customerA.id,
+        name: 'Principal',
         address: 'https://maps.app.goo.gl/example',
         district: 'Lima',
+        isDefault: true,
       },
     });
     const customerB = await db.prisma.customer.create({
       data: {
         companyId: manager.companyId,
         name: 'Cliente B',
+      },
+    });
+    const branchB = await db.prisma.customerBranch.create({
+      data: {
+        companyId: manager.companyId,
+        customerId: customerB.id,
+        name: 'Principal',
         address: 'Av. Javier Prado 123',
         district: 'San Isidro',
+        isDefault: true,
       },
     });
     await db.prisma.customerAssignment.createMany({
-      data: [customerA.id, customerB.id].map((customerId) => ({
+      data: [branchA, branchB].map((b) => ({
         companyId: manager.companyId,
-        customerId,
+        customerId: b.customerId,
+        branchId: b.id,
         membershipId: commercial.membershipId,
       })),
     });
@@ -148,6 +165,7 @@ test('weekly routes sync blocks repeating a customer within the same week', asyn
         companyId: manager.companyId,
         membershipId: commercial.membershipId,
         customerId: customerA.id,
+        branchId: branchA.id,
         workdayId: mondayWorkday.id,
         scheduledAt: new Date(`${mon}T15:00:00.000Z`),
         status: 'completed',

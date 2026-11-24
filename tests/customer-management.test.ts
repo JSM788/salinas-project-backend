@@ -173,14 +173,25 @@ test('customer creation persists metadata, enforces tenant uniqueness and reject
     assert.equal(created.assignments[0].membershipId, owner.membershipId);
     assert.equal((await create(input)).status, 409);
     assert.equal((await db.query('SELECT id FROM customers')).length, 1);
+    const foreignCustId = randomUUID();
     await db.query(
-      'INSERT INTO customers(id,company_id,name,address,ruc) VALUES($1,$2,$3,$4,$5)',
+      'INSERT INTO customers(id,company_id,name,ruc) VALUES($1,$2,$3,$4)',
+      [
+        foreignCustId,
+        foreign.companyId,
+        'Foreign client',
+        input.ruc,
+      ],
+    );
+    await db.query(
+      'INSERT INTO customer_branches(id,company_id,customer_id,name,address,is_default) VALUES($1,$2,$3,$4,$5,$6)',
       [
         randomUUID(),
         foreign.companyId,
-        'Foreign client',
+        foreignCustId,
+        'Principal',
         'Foreign address',
-        input.ruc,
+        true,
       ],
     );
     const portfolio = (await (
@@ -195,7 +206,15 @@ test('customer creation persists metadata, enforces tenant uniqueness and reject
       body: JSON.stringify({
         items: [
           {
-            name: 'Duplicate RUC Client',
+            name: 'Duplicate Branch Client',
+            address: input.address,
+            ruc: input.ruc,
+            district: input.district,
+            zone: input.zone,
+          },
+          {
+            name: 'New Branch Client',
+            branchName: 'Sede San Borja',
             address: 'Some street 1',
             ruc: input.ruc,
             district: 'San Borja',
@@ -203,13 +222,15 @@ test('customer creation persists metadata, enforces tenant uniqueness and reject
           },
           {
             name: 'Imported Client A',
+            branchName: 'Principal',
             address: 'Av. Larco 500',
             ruc: '20456789012',
             district: 'Miraflores',
             zone: 'Lima Centro',
           },
           {
-            name: 'Imported Client B (Same RUC in batch)',
+            name: 'Imported Client B (Second Branch in batch)',
+            branchName: 'Sucursal 2',
             address: 'Av. Larco 502',
             ruc: '20456789012',
             district: 'Miraflores',
@@ -219,21 +240,25 @@ test('customer creation persists metadata, enforces tenant uniqueness and reject
       }),
     });
     assert.equal(importRes.status, 200);
-    assert.deepEqual(await importRes.json(), { imported: 1, skipped: 2 });
+    assert.deepEqual(await importRes.json(), { imported: 3, skipped: 1 });
     const afterImport = (await (
       await fetch(url + '/v1/customers', { headers })
     ).json() as any).items as any[];
-    assert.equal(afterImport.length, 2);
+    assert.equal(afterImport.length, 4);
     const mine = (await (
       await fetch(url + '/v1/me/customers', { headers })
     ).json() as any).items as any[];
     assert.deepEqual(mine, [
       {
         id: created.id,
+        customerId: created.customerId,
+        branchId: created.branchId,
+        branchName: 'Principal',
         name: input.name,
         address: input.address,
         latitude: null,
         longitude: null,
+        conflictVisit: null,
       },
     ]);
   } finally {
@@ -278,8 +303,8 @@ test('bulk assignment is atomic and preserves other-role assignments and histori
   const { customer, visit } = await assignVisit(db, owner);
   const { customer: foreignCustomer } = await assignVisit(db, foreign);
   await db.query(
-    'INSERT INTO customer_assignments(company_id,customer_id,membership_id) VALUES($1,$2,$3)',
-    [owner.companyId, customer.id, merchandiser],
+    'INSERT INTO customer_assignments(company_id,customer_id,branch_id,membership_id) VALUES($1,$2,$3,$4)',
+    [owner.companyId, customer.customerId, customer.id, merchandiser],
   );
   await db.query(
     'UPDATE memberships SET can_manage_customers=true WHERE id=$1',
@@ -340,7 +365,7 @@ test('bulk assignment is atomic and preserves other-role assignments and histori
     assert.equal(assigned.status, 200);
     assert.deepEqual(await assigned.json(), { updated: 1 });
     const ownAssignments = await db.query(
-      'SELECT membership_id FROM customer_assignments WHERE customer_id=$1 ORDER BY membership_id',
+      'SELECT membership_id FROM customer_assignments WHERE branch_id=$1 ORDER BY membership_id',
       [customer.id],
     );
     assert.deepEqual(
