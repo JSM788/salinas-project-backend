@@ -322,6 +322,7 @@ export class WorkdaysService implements OnModuleInit, OnModuleDestroy {
             role: principal.role,
             startLatitude: input.latitude ?? null,
             startLongitude: input.longitude ?? null,
+            startAccuracy: input.accuracy ?? null,
           },
         });
         // Freeze today's planned visits into this workday before any visit is checked in.
@@ -388,6 +389,7 @@ export class WorkdaysService implements OnModuleInit, OnModuleDestroy {
             endedAt: now,
             endLatitude: input.latitude ?? null,
             endLongitude: input.longitude ?? null,
+            endAccuracy: input.accuracy ?? null,
           },
         });
         const updated = await tx.workday.update({
@@ -397,6 +399,7 @@ export class WorkdaysService implements OnModuleInit, OnModuleDestroy {
             endedAt: now,
             endLatitude: input.latitude ?? null,
             endLongitude: input.longitude ?? null,
+            endAccuracy: input.accuracy ?? null,
           },
         });
         const statistics = await workdayStatistics(tx, [day.id]);
@@ -485,6 +488,7 @@ export class WorkdaysService implements OnModuleInit, OnModuleDestroy {
             notes: input.notes?.trim() || null,
             startLatitude: input.latitude ?? null,
             startLongitude: input.longitude ?? null,
+            startAccuracy: input.accuracy ?? null,
           },
         });
         return workdayPauseResponse(pause, day.businessDate);
@@ -520,6 +524,7 @@ export class WorkdaysService implements OnModuleInit, OnModuleDestroy {
             endedAt: new Date(),
             endLatitude: input.latitude ?? null,
             endLongitude: input.longitude ?? null,
+            endAccuracy: input.accuracy ?? null,
           },
         });
         return workdayPauseResponse(updated, day.businessDate);

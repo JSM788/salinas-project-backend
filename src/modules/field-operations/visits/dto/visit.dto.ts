@@ -13,6 +13,7 @@ export const checkInSchema = z
   .object({
     latitude: z.number().finite().min(-90).max(90).optional(),
     longitude: z.number().finite().min(-180).max(180).optional(),
+    accuracy: z.number().finite().min(0).max(100000).optional(),
   })
   .strict();
 export type CheckInDto = z.infer<typeof checkInSchema>;
@@ -91,6 +92,9 @@ export const closeSchema = z
   .object({
     result: z.enum(['attended', 'closed', 'unavailable']),
     observations: z.string().trim().max(4000),
+    latitude: z.number().finite().min(-90).max(90).optional(),
+    longitude: z.number().finite().min(-180).max(180).optional(),
+    accuracy: z.number().finite().min(0).max(100000).optional(),
     attachment: attachmentSchema.optional(),
     audit: exhibitionAuditSchema.optional(),
   })
@@ -112,6 +116,12 @@ export const visitResponseSchema = z.object({
   cancellation_reason: z.string().nullable(),
   arrived_at: timestamp.nullable(),
   ended_at: timestamp.nullable(),
+  check_in_latitude: z.number().nullable().optional(),
+  check_in_longitude: z.number().nullable().optional(),
+  check_in_accuracy: z.number().nullable().optional(),
+  check_out_latitude: z.number().nullable().optional(),
+  check_out_longitude: z.number().nullable().optional(),
+  check_out_accuracy: z.number().nullable().optional(),
   result: z.enum(['attended', 'closed', 'unavailable']).nullable(),
   observations: z.string().nullable(),
   audit: exhibitionAuditSchema.nullable().optional(),
@@ -150,6 +160,12 @@ export function visitResponse(visit: Visit) {
     cancellation_reason: visit.cancellationReason,
     arrived_at: visit.arrivedAt?.toISOString() ?? null,
     ended_at: visit.endedAt?.toISOString() ?? null,
+    check_in_latitude: visit.checkInLatitude ?? null,
+    check_in_longitude: visit.checkInLongitude ?? null,
+    check_in_accuracy: visit.checkInAccuracy ?? null,
+    check_out_latitude: visit.checkOutLatitude ?? null,
+    check_out_longitude: visit.checkOutLongitude ?? null,
+    check_out_accuracy: visit.checkOutAccuracy ?? null,
     result: visit.result,
     observations: visit.observations,
     audit: visit.audit ?? null,

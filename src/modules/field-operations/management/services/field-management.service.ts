@@ -99,7 +99,7 @@ export class FieldManagementService {
       const total = await tx.membership.count({ where });
       const members = await tx.membership.findMany({
         where,
-        include: { user: { select: { email: true, displayName: true } } },
+        include: { user: { select: { email: true, displayName: true, dni: true } } },
         orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
         skip: (filters.page - 1) * filters.pageSize,
         take: filters.pageSize,
@@ -109,6 +109,7 @@ export class FieldManagementService {
           id: member.id,
           email: member.user.email,
           displayName: member.user.displayName,
+          dni: member.user.dni,
           role: member.role,
         }),
       ), total, filters);

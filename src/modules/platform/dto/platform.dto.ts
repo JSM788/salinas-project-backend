@@ -9,6 +9,7 @@ export const membershipRoleSchema = z.enum([
   "manager",
 ]);
 const displayName = z.string().trim().min(1).max(150);
+const dniSchema = z.string().trim().regex(/^\d{8}$/, 'Use an 8-digit DNI.');
 export const companyInputSchema = z
   .object({
     name: displayName,
@@ -38,6 +39,7 @@ export const companyInputSchema = z
 export const memberInputSchema = z
   .object({
     displayName,
+    dni: dniSchema.optional(),
     phone: phoneSchema,
     email: z.email().max(254),
     role: membershipRoleSchema,
@@ -119,6 +121,7 @@ export const memberResponseSchema = z.object({
   userId: platformIdSchema,
   companyId: platformIdSchema,
   displayName: z.string().nullable(),
+  dni: z.string().nullable().optional(),
   phone: z.string().nullable(),
   email: z.email(),
   role: membershipRoleSchema,

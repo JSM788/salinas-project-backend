@@ -35,6 +35,7 @@ export const startPauseSchema = z
     notes: z.string().trim().max(500).optional(),
     latitude: z.number().finite().min(-90).max(90).optional(),
     longitude: z.number().finite().min(-180).max(180).optional(),
+    accuracy: z.number().finite().min(0).max(100000).optional(),
   })
   .strict();
 export type StartPauseDto = z.infer<typeof startPauseSchema>;
@@ -43,6 +44,7 @@ export const endPauseSchema = z
   .object({
     latitude: z.number().finite().min(-90).max(90).optional(),
     longitude: z.number().finite().min(-180).max(180).optional(),
+    accuracy: z.number().finite().min(0).max(100000).optional(),
   })
   .strict();
 export type EndPauseDto = z.infer<typeof endPauseSchema>;
@@ -60,8 +62,10 @@ export const workdayPauseResponseSchema = z.object({
   ended_at: timestamp.nullable(),
   start_latitude: z.number().nullable().optional(),
   start_longitude: z.number().nullable().optional(),
+  start_accuracy: z.number().nullable().optional(),
   end_latitude: z.number().nullable().optional(),
   end_longitude: z.number().nullable().optional(),
+  end_accuracy: z.number().nullable().optional(),
   duration_minutes: z.number().int().nonnegative().nullable(),
 });
 export type WorkdayPauseResponse = z.infer<typeof workdayPauseResponseSchema>;
@@ -98,8 +102,10 @@ export function workdayPauseResponse(
     ended_at: row.endedAt?.toISOString() ?? null,
     start_latitude: row.startLatitude ?? null,
     start_longitude: row.startLongitude ?? null,
+    start_accuracy: row.startAccuracy ?? null,
     end_latitude: row.endLatitude ?? null,
     end_longitude: row.endLongitude ?? null,
+    end_accuracy: row.endAccuracy ?? null,
     duration_minutes: durationMinutes,
   });
 }

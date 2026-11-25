@@ -9,6 +9,7 @@ import { workdayResponseSchema } from '../../workdays/dto/workday.dto';
 export const fieldRoleSchema = z.enum(['commercial', 'merchandiser']);
 export const fieldMemberSchema = z.object({
   displayName: z.string().nullable().optional(),
+  dni: z.string().nullable().optional(),
   id: z.uuid(),
   email: z.email(),
   role: fieldRoleSchema,

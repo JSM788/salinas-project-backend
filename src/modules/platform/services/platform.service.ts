@@ -388,7 +388,7 @@ export class PlatformService {
       if (await tx.user.findUnique({ where: { email } })) rejectField('platform_identity_exists', ['email']);
       const member = await tx.membership.create({ data: {
         company: { connect: { id: companyId } }, role: input.role, canManageCustomers: input.role === 'manager', canManageFieldOperations: input.role === 'manager',
-        user: { create: { email, displayName: input.displayName, phone: input.phone, passwordHash: null } },
+        user: { create: { email, displayName: input.displayName, dni: input.dni ?? null, phone: input.phone, passwordHash: null } },
       }, include: { user: { select: memberUserSelection } } });
       await this.invitations.issue(tx, companyId, member.id, principal.userId);
       return { companyId, response: { ...memberResponse(member), invitationStatus: 'pending' as const, deliveryStatus: 'pending' as const } };
@@ -491,6 +491,7 @@ export class PlatformService {
             where: { id: member.userId },
             data: {
               displayName: input.displayName,
+              ...(input.dni !== undefined ? { dni: input.dni } : {}),
               phone: input.phone,
               email: logicalInput.email,
               ...(passwordHash === undefined

@@ -44,6 +44,7 @@ model User {
   blockedUntil          DateTime?               @map("blocked_until") @db.Timestamptz(6)
   memberships           Membership[]
   displayName           String?                 @map("display_name")
+  dni                   String?                 @db.VarChar(8)
   phone                 String?                 @db.VarChar(16)
   isPlatformOwner       Boolean                 @default(false) @map("is_platform_owner")
   platformVersion       Int                     @default(0) @map("platform_version")
@@ -212,8 +213,10 @@ model Workday {
   businessDate   DateTime   @map("business_date") @db.Date
   startLatitude  Float?     @map("start_latitude")
   startLongitude Float?     @map("start_longitude")
+  startAccuracy  Float?     @map("start_accuracy")
   endLatitude    Float?     @map("end_latitude")
   endLongitude   Float?     @map("end_longitude")
+  endAccuracy    Float?     @map("end_accuracy")
   membership     Membership @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
   visits         Visit[]
   pauses         WorkdayPause[]
@@ -243,6 +246,10 @@ model Visit {
   endedAt            DateTime?       @map("ended_at") @db.Timestamptz(6)
   checkInLatitude    Float?          @map("check_in_latitude")
   checkInLongitude   Float?          @map("check_in_longitude")
+  checkInAccuracy    Float?          @map("check_in_accuracy")
+  checkOutLatitude   Float?          @map("check_out_latitude")
+  checkOutLongitude  Float?          @map("check_out_longitude")
+  checkOutAccuracy   Float?          @map("check_out_accuracy")
   result             String?
   observations       String?
   audit              Json?
@@ -478,8 +485,10 @@ model WorkdayPause {
   endedAt        DateTime?    @map("ended_at") @db.Timestamptz(6)
   startLatitude  Float?       @map("start_latitude")
   startLongitude Float?       @map("start_longitude")
+  startAccuracy  Float?       @map("start_accuracy")
   endLatitude    Float?       @map("end_latitude")
   endLongitude   Float?       @map("end_longitude")
+  endAccuracy    Float?       @map("end_accuracy")
   membership     Membership   @relation(fields: [companyId, membershipId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
   workday        Workday      @relation(fields: [companyId, workdayId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)
   reason         PauseReason? @relation(fields: [companyId, reasonId], references: [companyId, id], onDelete: NoAction, onUpdate: NoAction)

@@ -4,6 +4,7 @@ import { memberResponseSchema } from '../dto/platform.dto';
 export const memberUserSelection = {
   email: true,
   displayName: true,
+  dni: true,
   phone: true,
   isPlatformOwner: true,
   passwordHash: true,
@@ -32,6 +33,7 @@ export function memberResponse(member: MembershipWithUser & { invitations?: Invi
     userId: member.userId,
     companyId: member.companyId,
     displayName: member.user.displayName,
+    dni: member.user.dni,
     phone: member.user.phone,
     email: member.user.email,
     role: member.role,

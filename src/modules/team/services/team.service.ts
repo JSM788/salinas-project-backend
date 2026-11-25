@@ -50,6 +50,7 @@ export class TeamService {
       ]);
       return pageResult(members.map((member) => teamMemberResponseSchema.parse({
         id: member.id, userId: member.userId, companyId: member.companyId, displayName: member.user.displayName,
+        dni: member.user.dni,
         phone: member.user.phone,
         email: member.user.email, role: member.role, active: member.active, ...memberInvitationResponse(member),
       })), total, query);
@@ -84,7 +85,7 @@ export class TeamService {
           if (member.active && member.user.passwordHash === null)
             await this.invitations.issue(tx, companyId, membershipId, principal.userId);
         }
-        const changed = (['displayName', 'email', 'phone'] as const).filter(field => member.user[field] !== input[field]);
+        const changed = (['displayName', 'dni', 'email', 'phone'] as const).filter(field => member.user[field] !== input[field]);
         if (changed.length) await recordAccessEvent(tx, { userId: member.userId, companyId, membershipId, actorUserId: principal.userId, event: 'account_updated', outcome: 'completed', details: { changed, ...(emailChanged ? { previousEmail: member.user.email, email: input.email } : {}), ...(member.user.phone !== input.phone ? { previousPhone: member.user.phone, phone: input.phone } : {}) } });
         const updated = await tx.membership.findUniqueOrThrow({ where: { id: membershipId }, include: { user: { select: memberUserSelection }, invitations: memberInvitationSelection } });
         const response = teamMemberResponseSchema.parse(memberResponse(updated));
