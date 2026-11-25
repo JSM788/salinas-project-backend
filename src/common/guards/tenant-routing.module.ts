@@ -32,7 +32,15 @@ export class TenantResolver {
 
   async resolve(host: string | string[] | undefined): Promise<string | undefined> {
     if (typeof host !== 'string') return undefined;
-    if (host === 'localhost' || host === '127.0.0.1') return undefined;
+    // Shared preview/platform hosts resolve the tenant from the user's active membership.
+    if (
+      host === 'localhost' ||
+      host === '127.0.0.1' ||
+      host.endsWith('.vercel.app') ||
+      host.endsWith('.onrender.com')
+    ) {
+      return undefined;
+    }
     const configured = this.companies.get(host);
     if (configured) return configured;
     const domain = await this.prisma.companyDomain.findUnique({
