@@ -44,14 +44,12 @@ export class AuthService {
     );
     try {
       await this.prisma.transaction(async (tx) => {
-        // [MOMENTÁNEO / TESTING]: En entorno de pruebas en un solo host (sin DNS wildcard activo),
-        // si el usuario no tiene membresía en el slug del host, permitimos buscar su membresía activa
-        // directa por usuario para que pueda acceder a su empresa asignada.
+        const allowTestFallback = process.env.ALLOW_CROSS_TENANT_TEST_FALLBACK === 'true';
         let memberships = user.isPlatformOwner ? [] : await tx.membership.findMany({
           where: { userId: user.id, active: true, company: { status: 'active', ...(company ? { slug: company } : {}) } },
           orderBy: { id: 'asc' }, take: 2,
         });
-        if (!user.isPlatformOwner && memberships.length === 0 && company) {
+        if (!user.isPlatformOwner && memberships.length === 0 && company && allowTestFallback) {
           memberships = await tx.membership.findMany({
             where: { userId: user.id, active: true, company: { status: 'active' } },
             orderBy: { id: 'asc' }, take: 2,
@@ -130,9 +128,8 @@ export class AuthService {
       };
       return principal;
     }
-    // [MOMENTÁNEO / TESTING]: En entorno de pruebas en un solo host (sin DNS wildcard activo),
-    // si la sesión activa no coincide con el slug del host actual, permitimos resolver la sesión
-    // de la empresa del usuario.
+
+    const allowTestFallback = process.env.ALLOW_CROSS_TENANT_TEST_FALLBACK === 'true';
     let session = await this.prisma.session.findFirst({
       where: {
         tokenHash,
@@ -151,7 +148,7 @@ export class AuthService {
         },
       },
     });
-    if (!session && company) {
+    if (!session && company && allowTestFallback) {
       session = await this.prisma.session.findFirst({
         where: {
           tokenHash,

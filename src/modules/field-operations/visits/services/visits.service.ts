@@ -147,14 +147,30 @@ export class VisitsService {
         if (!day) reject('active_workday_required');
 
         if (process.env.NODE_ENV !== 'test' && !process.env.NODE_TEST_CONTEXT) {
-          const nowLimaHour = Number(
-            new Intl.DateTimeFormat('en-CA', {
-              timeZone: principal.timeZone,
-              hour: '2-digit',
-              hour12: false,
-            }).format(new Date()),
-          );
-          if (nowLimaHour >= 19) {
+          const latestAudit = await tx.auditEntry.findFirst({
+            where: { companyId: principal.companyId, action: 'company_settings_updated' },
+            orderBy: { id: 'desc' },
+            select: { details: true },
+          });
+          let cutoffHour = '23:59';
+          const details = latestAudit?.details;
+          if (details && typeof details === 'object' && !Array.isArray(details)) {
+            const hour = (details as Record<string, unknown>).digitalDisconnectionHour;
+            if (typeof hour === 'string' && /^\d{2}:\d{2}$/.test(hour)) {
+              cutoffHour = hour;
+            }
+          }
+          const [cutoffHH, cutoffMM] = cutoffHour.split(':').map(Number);
+          const parts = new Intl.DateTimeFormat('en-CA', {
+            timeZone: principal.timeZone,
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          }).formatToParts(new Date());
+          const get = (t: string) => parts.find((p) => p.type === t)?.value ?? '00';
+          const currentHour = Number(get('hour') === '24' ? '00' : get('hour'));
+          const currentMinute = Number(get('minute'));
+          if (currentHour > cutoffHH || (currentHour === cutoffHH && currentMinute >= cutoffMM)) {
             reject('digital_disconnection_active');
           }
         }
@@ -260,7 +276,7 @@ export class VisitsService {
               ? `${visit.branch.latitude.toFixed(5)}, ${visit.branch.longitude.toFixed(5)}`
               : null;
 
-          const watermarkedBase64 = await watermarkService.applyWatermark(
+          const watermarkResult = await watermarkService.applyWatermark(
             input.attachment.base64,
             input.attachment.mimeType,
             {
@@ -272,8 +288,12 @@ export class VisitsService {
             },
           );
 
-          // Subida EXCLUSIVA a Cloudflare R2 (cero Base64 en base de datos)
-          const r2Url = await storage.uploadBase64(watermarkedBase64, input.attachment.mimeType, 'visits');
+          // Subida EXCLUSIVA a Cloudflare R2 con el MIME type real del buffer resultante
+          const r2Url = await storage.uploadBase64(
+            watermarkResult.base64,
+            watermarkResult.mimeType,
+            'visits',
+          );
           if (!r2Url) {
             reject('storage_upload_failed');
           }
@@ -282,7 +302,7 @@ export class VisitsService {
             data: {
               ...where,
               visitId: id,
-              mimeType: input.attachment.mimeType,
+              mimeType: watermarkResult.mimeType,
               content: Buffer.from(r2Url, 'utf-8'),
             },
           });

@@ -134,7 +134,7 @@ export class TeamService {
       legalName: typeof d.legalName === 'string' ? d.legalName : null,
       taxId: typeof d.taxId === 'string' ? d.taxId : null,
       logoUrl: typeof d.logoUrl === 'string' ? d.logoUrl : null,
-      digitalDisconnectionHour: typeof d.digitalDisconnectionHour === 'string' ? d.digitalDisconnectionHour : '19:00',
+      digitalDisconnectionHour: typeof d.digitalDisconnectionHour === 'string' ? d.digitalDisconnectionHour : '23:59',
       autoCloseRemainingVisits: typeof d.autoCloseRemainingVisits === 'boolean' ? d.autoCloseRemainingVisits : true,
       antiMockGpsRequired: typeof d.antiMockGpsRequired === 'boolean' ? d.antiMockGpsRequired : true,
     };
@@ -163,7 +163,7 @@ export class TeamService {
         legalName: extra.legalName ?? null,
         taxId: extra.taxId ?? null,
         logoUrl: extra.logoUrl ?? null,
-        digitalDisconnectionHour: extra.digitalDisconnectionHour ?? '19:00',
+        digitalDisconnectionHour: extra.digitalDisconnectionHour ?? '23:59',
         autoCloseRemainingVisits: extra.autoCloseRemainingVisits ?? true,
         antiMockGpsRequired: extra.antiMockGpsRequired ?? true,
       });

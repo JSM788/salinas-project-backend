@@ -1,4 +1,4 @@
-import { Body, Controller, Query, UseGuards } from '@nestjs/common';
+import { Body, Controller, Param, Query, UseGuards } from '@nestjs/common';
 import { z } from 'zod';
 import { Endpoint } from '../../../common/decorators/endpoint.decorator';
 import { CurrentPrincipal } from '../../../common/decorators/principal.decorator';
@@ -11,6 +11,10 @@ import {
   assigneeResponseSchema,
   CreateCustomerDto,
   createCustomerSchema,
+  UpdateCustomerDto,
+  updateCustomerSchema,
+  CustomerStatusDto,
+  customerStatusSchema,
   customerResponseSchema,
   ImportCustomersDto,
   importCustomersResponseSchema,
@@ -86,6 +90,34 @@ export class CustomersController {
     @Body(new ZodValidationPipe(createCustomerSchema)) input: CreateCustomerDto,
   ) {
     return this.customers.create(principal, input);
+  }
+
+  @Endpoint({
+    method: 'post',
+    path: 'customers/:branchId',
+    input: updateCustomerSchema,
+    output: managedCustomerResponseSchema,
+  })
+  update(
+    @CurrentPrincipal() principal: Principal,
+    @Param('branchId') branchId: string,
+    @Body(new ZodValidationPipe(updateCustomerSchema)) input: UpdateCustomerDto,
+  ) {
+    return this.customers.update(principal, branchId, input);
+  }
+
+  @Endpoint({
+    method: 'post',
+    path: 'customers/:branchId/status',
+    input: customerStatusSchema,
+    output: managedCustomerResponseSchema,
+  })
+  setStatus(
+    @CurrentPrincipal() principal: Principal,
+    @Param('branchId') branchId: string,
+    @Body(new ZodValidationPipe(customerStatusSchema)) input: CustomerStatusDto,
+  ) {
+    return this.customers.setStatus(principal, branchId, input);
   }
 
   @Endpoint({

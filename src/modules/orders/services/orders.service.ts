@@ -17,6 +17,20 @@ function webhookPathFor(provider: string): string {
   return `/v1/integrations/${provider}/orders`;
 }
 
+function buildOrderDateRange(query: Pick<OrdersListQuery, 'date' | 'dateFrom' | 'dateTo'>) {
+  if (query.date) {
+    return {
+      gte: new Date(`${query.date}T00:00:00.000-05:00`),
+      lte: new Date(`${query.date}T23:59:59.999-05:00`),
+    };
+  }
+  if (!query.dateFrom && !query.dateTo) return undefined;
+  return {
+    ...(query.dateFrom ? { gte: new Date(`${query.dateFrom}T00:00:00.000-05:00`) } : {}),
+    ...(query.dateTo ? { lte: new Date(`${query.dateTo}T23:59:59.999-05:00`) } : {}),
+  };
+}
+
 const DEFAULT_NOTE_BY_STATUS = {
   pendiente: 'Pedido recibido desde sistema externo.',
   en_transito: 'Pedido en ruta de entrega.',
@@ -117,8 +131,36 @@ export class OrdersService {
           branchId: true,
           linkStatus: true,
           evidence: true,
+          status: true,
+          originCode: true,
+          lastEventAt: true,
         },
       });
+
+      // Deduplicar evento antes de mutar
+      if (existing && input.externalEventId) {
+        const duplicateEvent = await tx.trackedOrderEvent.findUnique({
+          where: {
+            companyId_orderId_externalEventId: {
+              companyId,
+              orderId: existing.id,
+              externalEventId: input.externalEventId,
+            },
+          },
+          select: { id: true },
+        });
+        if (duplicateEvent) {
+          return {
+            id: existing.id,
+            externalOrderId: input.externalOrderId,
+            status: existing.status,
+            originCode: existing.originCode,
+            linkStatus: existing.linkStatus as 'linked' | 'pending_link',
+            membershipId: existing.membershipId,
+            customerId: existing.customerId,
+          };
+        }
+      }
 
       const resolvedMembershipId =
         existing?.membershipId ?? matchedMembership?.id ?? null;
@@ -133,12 +175,19 @@ export class OrdersService {
 
       const orderId = existing?.id ?? randomUUID();
 
+      // Política de ordenamiento temporal: si el evento llega desordenado (más antiguo que lastEventAt),
+      // registramos el evento en el historial sin degradar el estado más reciente de la orden.
+      const isOutOfOrder = Boolean(existing?.lastEventAt && existing.lastEventAt > occurredAt);
+      const effectiveStatus = isOutOfOrder && existing ? existing.status : status;
+      const effectiveOriginCode = isOutOfOrder && existing ? existing.originCode : originCode;
+      const effectiveLastEventAt = isOutOfOrder && existing?.lastEventAt ? existing.lastEventAt : occurredAt;
+
       const orderData = {
         membershipId: resolvedMembershipId,
         customerId: resolvedCustomerId,
         branchId: resolvedBranchId,
-        status,
-        originCode,
+        status: effectiveStatus,
+        originCode: effectiveOriginCode,
         linkStatus,
         linkReason,
         reportedCommercialPhone:
@@ -163,7 +212,7 @@ export class OrdersService {
         ...(input.evidence
           ? { evidence: input.evidence as Prisma.InputJsonValue }
           : {}),
-        lastEventAt: occurredAt,
+        lastEventAt: effectiveLastEventAt,
       };
 
       const order = existing
@@ -181,38 +230,19 @@ export class OrdersService {
             },
           });
 
-      let shouldInsertEvent = true;
-      if (input.externalEventId) {
-        const duplicateEvent = await tx.trackedOrderEvent.findUnique({
-          where: {
-            companyId_orderId_externalEventId: {
-              companyId,
-              orderId: order.id,
-              externalEventId: input.externalEventId,
-            },
-          },
-          select: { id: true },
-        });
-        if (duplicateEvent) {
-          shouldInsertEvent = false;
-        }
-      }
-
-      if (shouldInsertEvent) {
-        await tx.trackedOrderEvent.create({
-          data: {
-            id: randomUUID(),
-            companyId,
-            orderId: order.id,
-            externalEventId: input.externalEventId ?? null,
-            status,
-            originCode,
-            actor,
-            note,
-            occurredAt,
-          },
-        });
-      }
+      await tx.trackedOrderEvent.create({
+        data: {
+          id: randomUUID(),
+          companyId,
+          orderId: order.id,
+          externalEventId: input.externalEventId ?? null,
+          status,
+          originCode,
+          actor,
+          note,
+          occurredAt,
+        },
+      });
 
       await tx.companyIntegration.update({
         where: { id: integrationId },
@@ -222,8 +252,8 @@ export class OrdersService {
       return {
         id: order.id,
         externalOrderId: order.externalOrderId,
-        status: status,
-        originCode,
+        status: order.status,
+        originCode: order.originCode,
         linkStatus: linkStatus as 'linked' | 'pending_link',
         membershipId: order.membershipId,
         customerId: order.customerId,
@@ -400,12 +430,7 @@ export class OrdersService {
 
   async listFieldOrders(principal: Principal, query: OrdersListQuery) {
     return this.prisma.readTransaction(async (tx) => {
-      const dateRange = query.date
-        ? {
-            gte: new Date(`${query.date}T00:00:00.000Z`),
-            lte: new Date(`${query.date}T23:59:59.999Z`),
-          }
-        : undefined;
+      const dateRange = buildOrderDateRange(query);
 
       const baseWhere: Prisma.TrackedOrderWhereInput = {
         companyId: principal.companyId,
@@ -569,12 +594,7 @@ export class OrdersService {
     includeStatus: boolean,
   ): Prisma.TrackedOrderWhereInput {
     const search = query.search?.trim();
-    const dateRange = query.date
-      ? {
-          gte: new Date(`${query.date}T00:00:00.000Z`),
-          lte: new Date(`${query.date}T23:59:59.999Z`),
-        }
-      : undefined;
+    const dateRange = buildOrderDateRange(query);
 
     return {
       companyId,

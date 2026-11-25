@@ -14,6 +14,12 @@ export interface WatermarkData {
   advisor?: string | null;
 }
 
+export interface WatermarkResult {
+  base64: string;
+  mimeType: string;
+  verified: boolean;
+}
+
 export class WatermarkService {
   private font16Promise = loadFont(SANS_16_WHITE);
   private font32Promise = loadFont(SANS_32_WHITE);
@@ -22,7 +28,7 @@ export class WatermarkService {
     base64Data: string,
     mimeType: string,
     data: WatermarkData,
-  ): Promise<string> {
+  ): Promise<WatermarkResult> {
     try {
       const buffer = Buffer.from(base64Data, 'base64');
       const img = await Jimp.read(buffer);
@@ -54,7 +60,8 @@ export class WatermarkService {
           .replace(/[\u0300-\u036f]/g, '')
           .replace(/[^\x20-\x7E]/g, '');
 
-      const line1 = clean(`FECHA: ${data.timestamp} | GPS: ${data.coordinates || 'Campo Certificado'}`);
+      const gpsLabel = data.coordinates ? data.coordinates : 'NO VERIFICADO / SIN GPS';
+      const line1 = clean(`FECHA: ${data.timestamp} | GPS: ${gpsLabel}`);
       const line2 = clean(`CLIENTE: ${data.customerName}${data.district ? ` (${data.district})` : ''}`);
       const line3 = clean(`ASESOR: ${data.advisor || 'Comercial'} | SALINAS B2B`);
 
@@ -79,14 +86,21 @@ export class WatermarkService {
         text: line3,
       });
 
-      const watermarkedBuffer = await img.getBuffer(
-        mimeType === 'image/png' ? 'image/png' : 'image/jpeg',
-      );
+      const outputMime = mimeType === 'image/png' ? 'image/png' : 'image/jpeg';
+      const watermarkedBuffer = await img.getBuffer(outputMime);
 
-      return watermarkedBuffer.toString('base64');
+      return {
+        base64: watermarkedBuffer.toString('base64'),
+        mimeType: outputMime,
+        verified: Boolean(data.coordinates),
+      };
     } catch {
       // In case of any processing failure, gracefully fall back to original image
-      return base64Data;
+      return {
+        base64: base64Data,
+        mimeType,
+        verified: false,
+      };
     }
   }
 }

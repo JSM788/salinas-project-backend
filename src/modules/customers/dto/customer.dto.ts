@@ -8,6 +8,7 @@ export const customerFiltersSchema = paginationQuerySchema.extend({
   role: z.enum(['commercial', 'merchandiser']).optional(),
   assignment: z.enum(['assigned', 'unassigned']).optional(),
   scope: z.enum(['assigned', 'company']).optional(),
+  status: z.enum(['active', 'inactive', 'all']).optional(),
 }).strict();
 export type CustomerFilters = z.infer<typeof customerFiltersSchema>;
 
@@ -23,6 +24,18 @@ export const createCustomerSchema = z
     longitude: z.number().min(-180).max(180).nullable().optional(),
     commercialMembershipId: z.uuid().optional(),
     merchandiserMembershipId: z.uuid().optional(),
+  })
+  .strict();
+
+export const updateCustomerSchema = z
+  .object({
+    name: z.string().trim().min(1).max(150),
+    branchName: z.string().trim().min(1).max(120),
+    address: z.string().trim().min(1).max(300),
+    district: z.string().trim().min(1).max(100),
+    zone: z.string().trim().max(100).optional(),
+    latitude: z.number().min(-90).max(90).nullable().optional(),
+    longitude: z.number().min(-180).max(180).nullable().optional(),
   })
   .strict();
 
@@ -96,6 +109,7 @@ export const managedCustomerResponseSchema = customerResponseSchema.extend({
   district: z.string().nullable(),
   zone: z.string().nullable(),
   isDefault: z.boolean().optional(),
+  active: z.boolean().optional(),
   latitude: z.number().nullable().optional(),
   longitude: z.number().nullable().optional(),
   condition: z.null(),
@@ -128,6 +142,14 @@ export const customerLookupResponseSchema = z
   })
   .nullable();
 
+export const customerStatusSchema = z
+  .object({
+    active: z.boolean(),
+  })
+  .strict();
+
 export type CreateCustomerDto = z.infer<typeof createCustomerSchema>;
+export type UpdateCustomerDto = z.infer<typeof updateCustomerSchema>;
+export type CustomerStatusDto = z.infer<typeof customerStatusSchema>;
 export type ImportCustomersDto = z.infer<typeof importCustomersSchema>;
 export type AssignCustomersDto = z.infer<typeof assignCustomersSchema>;

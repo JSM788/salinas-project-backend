@@ -15,7 +15,7 @@ import { businessDateWindow } from '../../management/services/business-date-wind
 import { pageResult, PaginationQuery, paginationQuerySchema } from '../../../../common/pagination';
 import { workdayStatistics } from './workday-statistics';
 
-const DEFAULT_CUTOFF_HOUR = '19:00';
+const DEFAULT_CUTOFF_HOUR = '23:59';
 const MAX_TIMEOUT_MS = 2_147_483_647;
 
 @Injectable()
@@ -140,23 +140,50 @@ export class WorkdaysService implements OnModuleInit, OnModuleDestroy {
     now: Date,
     reason: string,
   ) {
-    await tx.visit.updateMany({
-      where: {
-        companyId: day.companyId,
-        membershipId: day.membershipId,
-        workdayId: day.id,
-        status: { in: ['pending', 'active'] },
-      },
-      data: {
-        status: 'cancelled',
-        workdayId: null,
-        arrivedAt: null,
-        endedAt: null,
-        result: null,
-        cancelledAt: now,
-        cancellationReason: reason,
-      },
+    const latestAudit = await tx.auditEntry.findFirst({
+      where: { companyId: day.companyId, action: 'company_settings_updated' },
+      orderBy: { id: 'desc' },
+      select: { details: true },
     });
+    let autoClose = true;
+    const details = latestAudit?.details;
+    if (details && typeof details === 'object' && !Array.isArray(details)) {
+      const flag = (details as Record<string, unknown>).autoCloseRemainingVisits;
+      if (typeof flag === 'boolean') autoClose = flag;
+    }
+
+    if (autoClose) {
+      await tx.visit.updateMany({
+        where: {
+          companyId: day.companyId,
+          membershipId: day.membershipId,
+          workdayId: day.id,
+          status: { in: ['pending', 'active'] },
+        },
+        data: {
+          status: 'cancelled',
+          workdayId: null,
+          arrivedAt: null,
+          endedAt: null,
+          result: null,
+          cancelledAt: now,
+          cancellationReason: reason,
+        },
+      });
+    } else {
+      await tx.visit.updateMany({
+        where: {
+          companyId: day.companyId,
+          membershipId: day.membershipId,
+          workdayId: day.id,
+          status: { in: ['pending', 'active'] },
+        },
+        data: {
+          workdayId: null,
+          arrivedAt: null,
+        },
+      });
+    }
     await tx.workdayPause.updateMany({
       where: {
         companyId: day.companyId,

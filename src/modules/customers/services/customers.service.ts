@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { Prisma } from '../../../generated/prisma/client';
 import { PrismaService, Transaction } from '../../../database/prisma.service';
 import { Principal } from '../../../common/types/principal';
@@ -6,6 +6,8 @@ import { reject, rejectField } from '../../../common/errors/application-error';
 import {
   AssignCustomersDto,
   CreateCustomerDto,
+  UpdateCustomerDto,
+  CustomerStatusDto,
   ImportCustomersDto,
   managedCustomerResponseSchema,
   CustomerFilters,
@@ -76,6 +78,7 @@ function branchResponse(branch: BranchWithDetails) {
     branchId: branch.id,
     branchName: branch.name,
     isDefault: branch.isDefault,
+    active: branch.active,
     name: branch.customer.name,
     address: branch.address,
     ruc: branch.customer.ruc,
@@ -235,7 +238,9 @@ export class CustomersService {
     };
     return {
       companyId: principal.companyId,
-      active: true,
+      ...(filters.status === 'all'
+        ? {}
+        : { active: filters.status === 'inactive' ? false : true }),
       ...(filters.search
         ? {
             OR: [
@@ -466,6 +471,79 @@ export class CustomersService {
         include: includeBranchDetails,
       });
       return branchResponse(saved);
+    });
+  }
+
+  async update(principal: Principal, branchId: string, input: UpdateCustomerDto) {
+    this.authorize(principal);
+    return this.prisma.transaction(async (tx) => {
+      await this.lockManager(tx, principal);
+      const existingBranch = await tx.customerBranch.findFirst({
+        where: { id: branchId, companyId: principal.companyId },
+      });
+      if (!existingBranch) {
+        throw new NotFoundException({
+          code: 'customer_not_found',
+          message: 'Customer branch not found.',
+        });
+      }
+
+      const coords = await resolveCustomerCoords(
+        input.latitude,
+        input.longitude,
+        input.address,
+      );
+
+      await tx.customer.update({
+        where: { id: existingBranch.customerId },
+        data: { name: input.name },
+      });
+
+      const updated = await tx.customerBranch.update({
+        where: { id: existingBranch.id },
+        data: {
+          name: input.branchName,
+          address: input.address,
+          district: input.district,
+          zone: input.zone || null,
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        },
+        include: includeBranchDetails,
+      });
+
+      await this.audit(tx, principal, 'customer_updated', updated.id);
+      return branchResponse(updated);
+    });
+  }
+
+  async setStatus(principal: Principal, branchId: string, input: CustomerStatusDto) {
+    this.authorize(principal);
+    return this.prisma.transaction(async (tx) => {
+      await this.lockManager(tx, principal);
+      const existingBranch = await tx.customerBranch.findFirst({
+        where: { id: branchId, companyId: principal.companyId },
+      });
+      if (!existingBranch) {
+        throw new NotFoundException({
+          code: 'customer_not_found',
+          message: 'Customer branch not found.',
+        });
+      }
+
+      const updated = await tx.customerBranch.update({
+        where: { id: existingBranch.id },
+        data: { active: input.active },
+        include: includeBranchDetails,
+      });
+
+      await this.audit(
+        tx,
+        principal,
+        input.active ? 'customer_enabled' : 'customer_disabled',
+        updated.id,
+      );
+      return branchResponse(updated);
     });
   }
 
